@@ -33,6 +33,21 @@
     </div>
     <div>Псевдоним и название сингла / альбома: {{ summaryData.releaseInfo?.performerName || 'не указано' }} - {{ summaryData.releaseInfo?.releaseName || 'не указано' }}</div>
     <div>Дата релиза: {{ formatDate(summaryData.releaseInfo?.releaseDate) }}</div>
+    <div>Тип лица: {{ userTypeSummaryLabel }}</div>
+    <template v-if="showIpSummaryBlock && quiz4FormSummary">
+      <div class="quiz__simple_summary_ip">
+        <div class="quiz__simple_summary_ip_title">Реквизиты ИП</div>
+        <div>Юридический адрес: {{ quiz4FormSummary.legalAddress?.trim() || '—' }}</div>
+        <div>ИНН: {{ quiz4FormSummary.inn?.trim() || '—' }}</div>
+        <div>ОГРН: {{ quiz4FormSummary.ogrn?.trim() || '—' }}</div>
+        <div>Расчётный счёт: {{ quiz4FormSummary.accountNumber?.trim() || '—' }}</div>
+        <div>Банк: {{ quiz4FormSummary.bankName?.trim() || '—' }}</div>
+        <div>ИНН банка: {{ quiz4FormSummary.bankInn?.trim() || '—' }}</div>
+        <div>БИК: {{ quiz4FormSummary.bankBik?.trim() || '—' }}</div>
+        <div>Корреспондентский счёт: {{ quiz4FormSummary.correspondentAccount?.trim() || '—' }}</div>
+        <div>Юридический адрес банка: {{ quiz4FormSummary.bankLegalAddress?.trim() || '—' }}</div>
+      </div>
+    </template>
   </div>
   
   <div v-if="isLoading" class="quiz__form_loading">
@@ -770,6 +785,20 @@ const summaryData = computed((): AllData => {
   return data;
 });
 
+/** Данные шага 4 для сводки перед оплатой (в т.ч. реквизиты ИП) */
+const quiz4FormSummary = computed(() => quiz4Data.value?.formData ?? null);
+
+const userTypeSummaryLabel = computed(() => {
+  const t = quiz4FormSummary.value?.userType;
+  if (t === 'entrepreneur') return 'Индивидуальный предприниматель';
+  if (t === 'individual') return 'Физическое лицо';
+  return 'не указано';
+});
+
+const showIpSummaryBlock = computed(
+  () => quiz4FormSummary.value?.userType === 'entrepreneur',
+);
+
 const canSubmit = computed(() => {
   const contractExists = hasContract.value;
   const signatureExists = hasSignature.value;
@@ -1126,7 +1155,10 @@ const prepareOrderData = async (): Promise<FormData> => {
     
     formData.append('citysenship1', '');
     formData.append('citysenship', u.userType === 'individual' ? 'Физическое лицо' : 'Индивидуальный предприниматель');
-    formData.append('select__fizurlico', u.userType === 'entrepreneur' ? 'urlico' : '');
+    formData.append(
+      'select__fizurlico',
+      u.userType === 'entrepreneur' ? 'urlico' : 'fizlico',
+    );
     formData.append('others', '');
     const legalAddr = u.legalAddress || '';
     const bankInn = u.bankInn || '';
@@ -1913,6 +1945,17 @@ onMounted(async () => {
   background-color: var(--bg-color);
   font-size: 16px;
   line-height: 2;
+}
+
+.quiz__simple_summary_ip {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.quiz__simple_summary_ip_title {
+  font-weight: 600;
+  margin-bottom: 8px;
 }
 
 .loading-spinner {

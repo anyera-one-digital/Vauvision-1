@@ -1489,7 +1489,10 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     
     formDataToSend.append('citysenship1', '');
     formDataToSend.append('citysenship', u.userType === 'individual' ? 'Физическое лицо' : 'Индивидуальный предприниматель');
-    formDataToSend.append('select__fizurlico', u.userType === 'entrepreneur' ? 'urlico' : '');
+    formDataToSend.append(
+      'select__fizurlico',
+      u.userType === 'entrepreneur' ? 'urlico' : 'fizlico',
+    );
     formDataToSend.append('others', '');
     const le = cleanField(u.legalAddress || '');
     const bi = u.bankInn || '';
