@@ -978,7 +978,10 @@ const prepareOrderData = async (): Promise<FormData> => {
         formData.append(`artist[${track.product_id}]`, cleanField(track.performerName || ''));
         formData.append(`autor-music[${track.product_id}]`, cleanField(track.musicAuthor || ''));
         formData.append(`autor-words[${track.product_id}]`, cleanField(track.textAuthor || ''));
-        formData.append(`autor-files[${track.product_id}]`, cleanField(track.performerName || ''));
+        formData.append(
+          `autor-files[${track.product_id}]`,
+          cleanField(track.trackName || track.performerName || ''),
+        );
         
         if (track.rightsType) {
           let rightsText = '';
@@ -1222,7 +1225,7 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('otkuda-uznali1', platformValue);
     formData.append('otkuda-uznali', platformValue);
     formData.append('others-otkuda', a.otherPlatform || '');
-    formData.append('instrumentals', a.rightsInfo || '');
+    formData.append('instrumentals', String(a.rightsInfo || '').trim());
     formData.append('comments', a.additionalComments || '');
     formData.append('plan', a.promoPlan || '');
     formData.append('link-bandlink', a.bandlinkUrl || '');
