@@ -42,7 +42,7 @@
     </Transition>
   </Teleport>
   
-  <div class="quiz__form_two_empty" v-if="showUploadAllSinglesButton || (albums.length > 0 && !hasAnyAlbumTracksWithFiles)">
+  <div class="quiz__form_two_empty">
     <div class="quiz__form_two_lists">
       <p class="quiz__form_two_description text_small">Отметить артистов можно 3 способами:</p>
       <ul class="quiz__form_two_list">
@@ -180,7 +180,7 @@
             <el-input
               v-model="track.trackName"
               type="text"
-              placeholder="Введите название трека"
+              placeholder="Пример: «1. Ваш псевдоним – Название трека»"
               :disabled="isLoadingTwo"
               size="large"
               @input="() => validateSingleOnChange(trackIndex, 'trackName')"
@@ -216,8 +216,8 @@
               {{ singleErrors[trackIndex].rightsType }}
             </div>
             
-            <!-- Поле для ссылки на договор, если нужно -->
-            <div v-if="track.rightsType === 'wav' || track.rightsType === 'mp3'" class="form__group_inner">
+            <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
+            <div v-if="needsRightsContractLink(track.rightsType)" class="form__group_inner">
               <label class="form__label button text_small">Ссылка на договор<span>*</span></label>
               <el-input
                 v-model="track.rightsContractLink"
@@ -241,7 +241,19 @@
                   validateSingleForm(trackIndex);
                 }"
               />
-              <div v-if="singleErrors[trackIndex]?.rightsContractLink" class="error text_very quiz__form_single_error">
+              <div
+                v-if="track.rightsType === 'wav' || track.rightsType === 'mp3'"
+                class="error text_very quiz__form_single_error"
+              >
+                <template v-if="singleErrors[trackIndex]?.rightsContractLink">
+                  {{ singleErrors[trackIndex].rightsContractLink }}<br />
+                </template>
+                {{ WAV_MP3_LEASE_SHIPPING_NOTICE }}
+              </div>
+              <div
+                v-else-if="singleErrors[trackIndex]?.rightsContractLink"
+                class="error text_very quiz__form_single_error"
+              >
                 {{ singleErrors[trackIndex].rightsContractLink }}
               </div>
             </div>
@@ -407,7 +419,7 @@
                   <el-input
                     v-model="track.trackName"
                     type="text"
-                    placeholder="Введите название трека"
+                    placeholder="Пример: «1. Ваш псевдоним – Название трека»"
                     :disabled="isLoadingTwo"
                     size="large"
                     @input="() => validateAlbumTrackOnChange(albumIndex, trackIndex, 'trackName')"
@@ -443,8 +455,8 @@
                     {{ albumErrors[albumIndex].tracks[trackIndex].rightsType }}
                   </div>
                   
-                  <!-- Поле для ссылки на договор, если нужно -->
-                  <div v-if="track.rightsType === 'wav' || track.rightsType === 'mp3'" class="form__group_inner">
+                  <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
+                  <div v-if="needsRightsContractLink(track.rightsType)" class="form__group_inner">
                     <label class="form__label button text_small">Ссылка на договор<span>*</span></label>
                     <el-input
                       v-model="track.rightsContractLink"
@@ -468,7 +480,19 @@
                         validateAlbumTrackForm(albumIndex, trackIndex);
                       }"
                     />
-                    <div v-if="albumErrors[albumIndex]?.tracks[trackIndex]?.rightsContractLink" class="error text_very quiz__form_single_error">
+                    <div
+                      v-if="track.rightsType === 'wav' || track.rightsType === 'mp3'"
+                      class="error text_very quiz__form_single_error"
+                    >
+                      <template v-if="albumErrors[albumIndex]?.tracks[trackIndex]?.rightsContractLink">
+                        {{ albumErrors[albumIndex].tracks[trackIndex].rightsContractLink }}<br />
+                      </template>
+                      {{ WAV_MP3_LEASE_SHIPPING_NOTICE }}
+                    </div>
+                    <div
+                      v-else-if="albumErrors[albumIndex]?.tracks[trackIndex]?.rightsContractLink"
+                      class="error text_very quiz__form_single_error"
+                    >
                       {{ albumErrors[albumIndex].tracks[trackIndex].rightsContractLink }}
                     </div>
                   </div>
@@ -583,7 +607,7 @@
   <h4 class="quiz__important_head">важно!</h4>
   <ul class="quiz__important_list">
     <li class="quiz__important_item">
-      <p class="quiz__important_description">В ваших треках не должно быть пиратского контента, т.е. сэмплов и иных кусков чужих популярных треков, на которые у вас нет документального разрешения от авторов (скрин переписки не подойдёт, только договор передачи прав)!</p>
+      <p class="quiz__important_description">В ваших треках не должно быть пиратского контента, т.е. сэмплов и иных кусков чужих треков, на которые у вас нет документального разрешения от авторов (скрин переписки не подойдёт, только договор передачи прав)!</p>
     </li>
     <li class="quiz__important_item">
       <p class="quiz__important_description">Отрывки и сэмплы даже длительностью 1, 3, 5 и т.д. секунд НЕ ДОПУСКАЮТСЯ и НЕ ПРОЙДУТ модерацию.</p>
@@ -646,6 +670,45 @@ const rightsOptions = [
   { value: 'free', label: 'free for profit / бит с ютуба' },
   { value: 'gifted', label: 'подарен / отдан бесплатно / сделан по дружбе' }
 ];
+
+/** Аренда (wav/mp3) и исключительная лицензия — нужна действующая ссылка на договор с правами на инструментал */
+function needsRightsContractLink(rightsType: string): boolean {
+  return (
+    rightsType === 'wav' ||
+    rightsType === 'mp3' ||
+    rightsType === 'exclusive'
+  )
+}
+
+/** Допустимые треки: по расширению и/или MIME (macOS часто даёт audio/x-wav, иногда пустой type). */
+const TRACK_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'];
+const TRACK_AUDIO_MIME_TYPES = [
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/wave',
+  'audio/flac',
+  'audio/x-flac',
+  'audio/aac',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/ogg',
+  'application/ogg',
+];
+
+function isAllowedTrackAudioFile(file: File): boolean {
+  const lower = file.name.toLowerCase();
+  const extOk = TRACK_AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  const typeOk = Boolean(file.type) && TRACK_AUDIO_MIME_TYPES.includes(file.type);
+  return extOk || typeOk;
+}
+
+const ACCEPT_TRACK_AUDIO =
+  '.mp3,.wav,.flac,.aac,.m4a,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/flac,audio/aac,audio/mp4,audio/ogg';
+
+const WAV_MP3_LEASE_SHIPPING_NOTICE =
+  'Внимание! В связи с усилением внимания к правам на отгружаемый контент со стороны площадок, сроки отгрузки релизов с таким типов прав (wav/mp3 аренда, лизинг) может быть увеличен до 14 календарных дней. Пожалуйста, учитывайте это при планировании даты релиза!'
 
 const isLoadingTwo = ref(false);
 const showImportantBlock = ref(false);
@@ -769,7 +832,7 @@ const validateSingleRights = (trackIndex: number) => {
   
   if (!track.rightsType) {
     error = 'Выберите тип прав на инструментал';
-  } else if (track.rightsType === 'wav' || track.rightsType === 'mp3') {
+  } else if (needsRightsContractLink(track.rightsType)) {
     if (!track.rightsContractLink?.trim()) {
       error = 'Для выбранного типа прав необходима ссылка на договор';
     } else if (!isValidUrl(track.rightsContractLink)) {
@@ -785,7 +848,7 @@ const validateSingleRightsLink = (trackIndex: number) => {
   const track = singleTracks.value[trackIndex];
   let error = '';
   
-  if ((track.rightsType === 'wav' || track.rightsType === 'mp3') && !track.rightsContractLink?.trim()) {
+  if (needsRightsContractLink(track.rightsType) && !track.rightsContractLink?.trim()) {
     error = 'Ссылка на договор обязательна';
   } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
     error = 'Введите корректную ссылку (начинается с https://)';
@@ -802,7 +865,7 @@ const validateAlbumTrackRights = (albumIndex: number, trackIndex: number) => {
   
   if (!track.rightsType) {
     error = 'Выберите тип прав на инструментал';
-  } else if (track.rightsType === 'wav' || track.rightsType === 'mp3') {
+  } else if (needsRightsContractLink(track.rightsType)) {
     if (!track.rightsContractLink?.trim()) {
       error = 'Для выбранного типа прав необходима ссылка на договор';
     } else if (!isValidUrl(track.rightsContractLink)) {
@@ -818,7 +881,7 @@ const validateAlbumTrackRightsLink = (albumIndex: number, trackIndex: number) =>
   const track = albums.value[albumIndex].tracks[trackIndex];
   let error = '';
   
-  if ((track.rightsType === 'wav' || track.rightsType === 'mp3') && !track.rightsContractLink?.trim()) {
+  if (needsRightsContractLink(track.rightsType) && !track.rightsContractLink?.trim()) {
     error = 'Ссылка на договор обязательна';
   } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
     error = 'Введите корректную ссылку (начинается с https://)';
@@ -1237,7 +1300,6 @@ const loadStateFromDB = async () => {
   
   await safeDBOperation(
     async () => {
-      const savedState = await quizDB.value.get(STORE_NAME, STORAGE_KEY);
       const counts = await getCountsFromQuiz1();
       
       singleCountFromQuiz1.value = counts.singleCount;
@@ -1273,7 +1335,8 @@ const isReadyForNextStep = computed(() => {
      singleTracks.value.every((track, index) => {
       if (!track.audioFile || !track.uploaded) return false;
       
-      return track.trackName.trim().length >= 1 &&
+      return isValidFullTrackTitleFormat(track.trackName) &&
+        !singleErrors.value[index]?.trackName &&
         track.performerName.trim().split(/\s+/).length >= 3 &&
         !singleErrors.value[index]?.performerName &&
         track.musicAuthor.trim().split(/\s+/).length >= 3 &&
@@ -1282,8 +1345,8 @@ const isReadyForNextStep = computed(() => {
         !singleErrors.value[index]?.textAuthor &&
         track.rightsType &&
         !singleErrors.value[index]?.rightsType &&
-        (track.rightsType !== 'wav' && track.rightsType !== 'mp3' || 
-         (track.rightsContractLink && !singleErrors.value[index]?.rightsContractLink));
+        (!needsRightsContractLink(track.rightsType) ||
+         (track.rightsContractLink?.trim() && !singleErrors.value[index]?.rightsContractLink));
     }));
 
   const allAlbumsComplete = albumCountFromQuiz1.value === 0 || 
@@ -1303,12 +1366,14 @@ const isReadyForNextStep = computed(() => {
         const isTextAuthorValid = track.textAuthor.trim().split(/\s+/).length >= 3 &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.textAuthor;
         
-        const isTrackNameValid = track.trackName.trim().length >= 1;
+        const isTrackNameValid =
+          isValidFullTrackTitleFormat(track.trackName) &&
+          !albumErrors.value[albumIndex]?.tracks[trackIndex]?.trackName;
         
         const isRightsValid = track.rightsType &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsType &&
-          (track.rightsType !== 'wav' && track.rightsType !== 'mp3' || 
-           (track.rightsContractLink && !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsContractLink));
+          (!needsRightsContractLink(track.rightsType) ||
+           (track.rightsContractLink?.trim() && !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsContractLink));
         
         return isTrackNameValid && isPerformerValid && isMusicAuthorValid && 
                isTextAuthorValid && isRightsValid;
@@ -1332,6 +1397,16 @@ const checkForbiddenWords = (value: string): boolean => {
 const checkMinWords = (value: string, minWords: number): boolean => {
   if (!value.trim()) return false;
   return value.trim().split(/\s+/).length >= minWords;
+};
+
+/** Формат: «1. Псевдоним – Название трека» (разделитель — дефис или типографское тире, с пробелами). */
+const FULL_TRACK_NAME_PATTERN_ERROR =
+  'Укажите номер трека, псевдоним и название через пробелы. Пример: 1. VAUVISION - Интро';
+
+const isValidFullTrackTitleFormat = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^\d+\.\s+(.+?)\s[–\-—]\s+(.+)$/u.test(trimmed);
 };
 
 const validateSinglePerformerName = (trackIndex: number) => {
@@ -1388,8 +1463,8 @@ const validateSingleTrackName = (trackIndex: number) => {
   
   if (!value.trim()) {
     error = 'Название трека обязательно для заполнения';
-  } else if (value.trim().length < 1) {
-    error = 'Название трека должно содержать минимум 1 символ';
+  } else if (!isValidFullTrackTitleFormat(value)) {
+    error = FULL_TRACK_NAME_PATTERN_ERROR;
   }
   
   singleErrors.value[trackIndex].trackName = error;
@@ -1469,8 +1544,8 @@ const validateAlbumTrackTrackName = (albumIndex: number, trackIndex: number) => 
   
   if (!value.trim()) {
     error = 'Название трека обязательно для заполнения';
-  } else if (value.trim().length < 1) {
-    error = 'Название трека должно содержать минимум 1 символ';
+  } else if (!isValidFullTrackTitleFormat(value)) {
+    error = FULL_TRACK_NAME_PATTERN_ERROR;
   }
   
   albumErrors.value[albumIndex].tracks[trackIndex].trackName = error;
@@ -1515,7 +1590,7 @@ const addSingleTrackWithFile = async () => {
   const input = document.createElement('input');
   input.type = 'file';
   // ВАЖНО: для iOS нужно указывать конкретные расширения, а не просто audio/*
-  input.accept = '.mp3,.wav,.flac,.aac,.m4a,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/flac,audio/aac,audio/mp4,audio/ogg';
+  input.accept = ACCEPT_TRACK_AUDIO;
   input.multiple = false;
   input.style.position = 'absolute';
   input.style.top = '-100px';
@@ -1562,19 +1637,16 @@ const addSingleTrackWithFile = async () => {
         throw new Error(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(2)}MB). Максимальный размер - 50MB`);
       }
       
-      // Проверка расширения файла (для iOS type часто приходит пустым)
-      const validExtensions = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'];
-      const fileName = file.name.toLowerCase();
-      const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
-      
-      if (!hasValidExtension) {
+      if (!isAllowedTrackAudioFile(file)) {
         throw new Error('Недопустимый формат файла. Поддерживаются: MP3, WAV, FLAC, AAC, M4A, OGG');
       }
-      
-      // Дополнительная проверка MIME-типа (если он есть)
-      const validMimeTypes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/flac', 'audio/aac', 'audio/mp4', 'audio/ogg'];
-      if (file.type && !validMimeTypes.includes(file.type) && !file.type.startsWith('audio/')) {
-        console.warn(`Нестандартный MIME-тип: ${file.type}, но расширение валидное`);
+
+      if (
+        file.type &&
+        !TRACK_AUDIO_MIME_TYPES.includes(file.type) &&
+        !file.type.startsWith('audio/')
+      ) {
+        console.warn(`Нестандартный MIME-тип: ${file.type}, расширение при этом допустимо`);
       }
       
       // Генерируем ID и сохраняем в IndexedDB
@@ -1694,7 +1766,7 @@ const uploadAllSingles = async () => {
   // Создаем input с правильными атрибутами для iOS
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.mp3,.wav,.flac,.aac,.m4a,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/flac,audio/aac,audio/mp4,audio/ogg';
+  input.accept = ACCEPT_TRACK_AUDIO;
   input.multiple = true; // Для массовой загрузки
   input.style.position = 'absolute';
   input.style.top = '-100px';
@@ -1738,11 +1810,7 @@ const uploadAllSingles = async () => {
           throw new Error(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
         }
         
-        // Проверка расширения
-        const validExtensions = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'];
-        const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
-        
-        if (!hasValidExtension) {
+        if (!isAllowedTrackAudioFile(file)) {
           throw new Error(`Недопустимый формат файла: ${file.name}`);
         }
         
@@ -1819,7 +1887,7 @@ const uploadAllAlbumTracks = async () => {
   
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'audio/*';
+  input.accept = ACCEPT_TRACK_AUDIO;
   input.multiple = true;
   input.style.display = 'none';
   
@@ -1840,8 +1908,7 @@ const uploadAllAlbumTracks = async () => {
           throw new Error('Файл имеет 0 байт');
         }
         
-        const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/aac', 'audio/ogg'];
-        if (!allowedTypes.includes(file.type)) {
+        if (!isAllowedTrackAudioFile(file)) {
           throw new Error('Недопустимый формат файла');
         }
         
@@ -1928,7 +1995,7 @@ const addAlbumTrackWithFile = async (albumIndex: number) => {
     
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'audio/*';
+    input.accept = ACCEPT_TRACK_AUDIO;
     input.multiple = false;
     input.style.display = 'none';
     
@@ -1943,8 +2010,7 @@ const addAlbumTrackWithFile = async (albumIndex: number) => {
           throw new Error('Файл имеет 0 байт. Проверьте файл и попробуйте снова.');
         }
         
-        const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/aac', 'audio/ogg'];
-        if (!allowedTypes.includes(file.type)) {
+        if (!isAllowedTrackAudioFile(file)) {
           throw new Error('Недопустимый формат файла');
         }
         

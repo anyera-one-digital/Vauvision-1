@@ -26,7 +26,7 @@
           :title="'Счёт обновляется после скачивания отчёта. Пожалуйста, скачайте отчёт, после этого сумма на балансе обновится'"
         >
           <PaySVG />
-          <span>Баланс: {{ formattedBalance(userData.balance) }} руб.</span>
+          <span>Баланс: {{ formattedBalance(userData.balance) }} {{ userData.currencySymbol }}</span>
         </div>
       </div>
 
@@ -110,7 +110,7 @@
 <script setup lang="ts">
 import { onMounted, ref, onUnmounted } from "vue";
 import { RouterLink } from "vue-router";
-import { sendRequest } from "@/utils/api";
+import { fetchSharedCabinetGetData } from "@/utils/fetchSharedCabinetGetData";
 import HomeSVG from "@/uikit/menu/HomeSVG.vue";
 import UploadSVG from "@/uikit/menu/UploadSVG.vue";
 import SettingSVG from "@/uikit/menu/SettingSVG.vue";
@@ -137,6 +137,8 @@ interface UserData {
   name: string;
   email: string;
   balance: number;
+  /** profile.currencySymbol из getData (₽ / $) */
+  currencySymbol: string;
   avatar: string;
   login: string;
 }
@@ -181,10 +183,15 @@ const userData = ref<UserData>(
     name: 'Загрузка...',
     email: 'Загрузка...',
     balance: 0,
+    currencySymbol: '₽',
     avatar: '',
     login: ''
   }
 );
+
+if (savedData?.userData && savedData.userData.currencySymbol == null) {
+  userData.value.currencySymbol = '₽';
+}
 
 // Ссылка для выхода
 const logoutUrl = ref(savedData?.logoutUrl || '');
@@ -200,8 +207,7 @@ const fetchUserData = async (prefetched?: Record<string, unknown>) => {
   try {
     const response = prefetched
       ? { data: prefetched }
-      : await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Menu данные из API:', response.data);
+      : await fetchSharedCabinetGetData();
 
     if (response.data) {
       // Данные пользователя
@@ -209,6 +215,7 @@ const fetchUserData = async (prefetched?: Record<string, unknown>) => {
         name: 'Пользователь',
         email: 'email@example.com',
         balance: 0,
+        currencySymbol: '₽',
         avatar: '',
         login: ''
       };
@@ -224,7 +231,15 @@ const fetchUserData = async (prefetched?: Record<string, unknown>) => {
       }
 
       if (response.data.profile) {
-        newUserData.balance = response.data.profile.balance || 0;
+        const prof = response.data.profile as {
+          balance?: number;
+          region?: string;
+          currencySymbol?: string;
+        };
+        newUserData.balance = prof.balance || 0;
+        newUserData.currencySymbol =
+          (prof.currencySymbol as string) ||
+          (prof.region === 'Russia' ? '₽' : '$');
       }
 
       syncLabelMenuFromGetDataResponse(

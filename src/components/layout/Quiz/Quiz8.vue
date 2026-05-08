@@ -1,5 +1,25 @@
 <template>
 <div class="quiz__form quiz__form_eight">
+  <template v-if="showPaymentWay">
+    <PaymentWay
+      :usdt-payment-url="usdtPaymentUrlResolved"
+      :card-payment-url="cardPaymentUrlResolved"
+    />
+    <div class="quiz__form_bottom">
+      <div class="quiz__form_buttons">
+        <button
+          type="button"
+          class="form__back button__second button"
+          @click="goBack"
+        >
+          <span><BackSVG /></span>
+          <span>Назад</span>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <template v-else>
   <h4 class="quiz__form_head">Отправка данных</h4>
   
   <!-- ПРОСТАЯ СВОДКА -->
@@ -50,6 +70,7 @@
       </button>
     </div>
   </div>
+  </template>
 </div>
 </template>
 
@@ -58,12 +79,88 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { FileRequest } from '@/utils/api';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
+import PaymentWay from '@/components/layout/Quiz/PaymentWay.vue';
 import { openDB } from 'idb';
 
 const emit = defineEmits<{
   'go-back': [];
   'finish': [];
 }>();
+
+const QUIZ_LAST_PAYMENT_LINKS_KEY = 'quiz_last_payment_links';
+
+const showPaymentWay = ref(false);
+const usdtPaymentUrlResolved = ref('');
+const cardPaymentUrlResolved = ref('');
+
+type OrderSuccessPayload = {
+  order_id?: string | number;
+  payment_url?: string;
+  payment_usdt_url?: string;
+  payment_card_url?: string;
+};
+
+const resolvePaymentHref = (url: string): string => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const origin = window.location.origin;
+  return origin + (url.startsWith('/') ? url : `/${url}`);
+};
+
+const resetPaymentWay = () => {
+  showPaymentWay.value = false;
+  usdtPaymentUrlResolved.value = '';
+  cardPaymentUrlResolved.value = '';
+};
+
+const extractOrderSuccessData = (responseData: unknown): OrderSuccessPayload | null => {
+  if (responseData === null || responseData === undefined) return null;
+  if (typeof responseData === 'object' && responseData !== null && 'error' in responseData) {
+    const o = responseData as { error?: number; data?: OrderSuccessPayload };
+    if (o.error === 0 && o.data && typeof o.data === 'object') return o.data;
+  }
+  if (typeof responseData === 'string') {
+    const jsonMatch = responseData.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]) as { error?: number; data?: OrderSuccessPayload };
+        if (parsed.error === 0 && parsed.data && typeof parsed.data === 'object') return parsed.data;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+};
+
+const tryShowPaymentWay = (data: OrderSuccessPayload): boolean => {
+  let usdt = data.payment_usdt_url?.trim();
+  let card = data.payment_card_url?.trim();
+  const base = data.payment_url?.trim();
+  if ((!usdt || !card) && base) {
+    const sep = base.includes('?') ? '&' : '?';
+    if (!usdt) usdt = `${base}${sep}SYSTEM=CRYPTO`;
+    if (!card) card = `${base}${sep}SYSTEM=CloudPayments`;
+  }
+  if (!usdt || !card) return false;
+  usdtPaymentUrlResolved.value = resolvePaymentHref(usdt);
+  cardPaymentUrlResolved.value = resolvePaymentHref(card);
+  showPaymentWay.value = true;
+  try {
+    sessionStorage.setItem(
+      QUIZ_LAST_PAYMENT_LINKS_KEY,
+      JSON.stringify({
+        order_id: data.order_id,
+        usdt: usdtPaymentUrlResolved.value,
+        card: cardPaymentUrlResolved.value,
+      }),
+    );
+  } catch {
+    /* ignore */
+  }
+  ElMessage.success('Заказ успешно оформлен! Выберите способ оплаты.');
+  return true;
+};
 
 // Интерфейсы
 interface ContractData {
@@ -118,7 +215,8 @@ interface Quiz3Data {
   formData?: {
     performerName?: string;
     releaseName?: string;
-    platforms?: string[];
+    /** В Quiz3 хранится строка (all | other) */
+    platforms?: string | string[];
     otherPlatform?: string;
     releaseDate?: string;
     hasProfanity?: string;
@@ -198,6 +296,10 @@ interface Quiz6Data {
   promoApplied?: boolean;
   promoDiscount?: number;
   contractData?: ContractData;
+  /** С шага 6: после промо, до бонусов (база для sumOrder в order.php) */
+  orderTotalAfterPromo?: number;
+  /** Итог к оплате после бонусов — как в договоре */
+  finalPayableAmount?: number;
 }
 
 interface Quiz7Data {
@@ -220,7 +322,7 @@ interface AllData {
   releaseInfo?: {
     performerName?: string;
     releaseName?: string;
-    platforms?: string[];
+    platforms?: string | string[];
     otherPlatform?: string;
     releaseDate?: string;
     hasProfanity?: string;
@@ -749,6 +851,42 @@ const findProductIdByFileName = (fileName: string): string | undefined => {
   return undefined;
 };
 
+/** Ключи kuda-* под propText() в order.php: 1 = все площадки, 4 = другое */
+const kudaFieldsFromQuiz3 = (form: Quiz3Data['formData'] | undefined) => {
+  if (!form) {
+    return {
+      singleKuda: '1',
+      singleKuda1: '1',
+      othersKuda: '',
+      albumKuda: '1',
+      albumKuda1: '1',
+      othersKudaAlbum: '',
+    };
+  }
+  const raw = form.platforms;
+  const p = Array.isArray(raw) ? raw[0] : raw;
+  const isOther = p === 'other';
+  const other = form.otherPlatform || '';
+  if (isOther) {
+    return {
+      singleKuda: '4',
+      singleKuda1: '4',
+      othersKuda: other,
+      albumKuda: '4',
+      albumKuda1: '4',
+      othersKudaAlbum: other,
+    };
+  }
+  return {
+    singleKuda: '1',
+    singleKuda1: '1',
+    othersKuda: '',
+    albumKuda: '1',
+    albumKuda1: '1',
+    othersKudaAlbum: '',
+  };
+};
+
 // Функция для создания FormData с ВСЕМИ файлами
 const prepareOrderData = async (): Promise<FormData> => {
   const formData = new FormData();
@@ -778,9 +916,17 @@ const prepareOrderData = async (): Promise<FormData> => {
     });
   }
   
-  // --- 1. ШАГ 1: Количество ---
+  // --- 1. ШАГ 1: Количество (как в TM / newDock для order.php) ---
+  formData.append('check-single', singleCount.value > 0 ? 'on' : 'off');
+  formData.append('check-album', albumCount.value > 0 ? 'on' : 'off');
+  formData.append('check-klip', clipCount.value > 0 ? 'on' : 'off');
   formData.append('check-karta', cardCount.value > 0 ? 'on' : 'off');
-  console.log('check-karta:', cardCount.value > 0 ? 'on' : 'off');
+  console.log('check-*:', {
+    single: singleCount.value > 0 ? 'on' : 'off',
+    album: albumCount.value > 0 ? 'on' : 'off',
+    klip: clipCount.value > 0 ? 'on' : 'off',
+    karta: cardCount.value > 0 ? 'on' : 'off',
+  });
   
   formData.append('COUNT', String(singleCount.value));
   formData.append('COUNT', String(albumCount.value));
@@ -859,9 +1005,14 @@ const prepareOrderData = async (): Promise<FormData> => {
             formData.append(`path-file-album[${track.product_id}]`, track.audioFileName || '');
             formData.append(`name-file-album[${track.product_id}]`, track.audioFileName || '');
             
-            const releaseName = quiz3Data.value?.formData?.releaseName || '';
-            formData.append(`artist-album[${track.product_id}]`, cleanField(releaseName));
-            formData.append(`autor-files-album[${track.product_id}]`, cleanField(releaseName));
+            formData.append(
+              `artist-album[${track.product_id}]`,
+              cleanField(track.performerName || '')
+            );
+            formData.append(
+              `autor-files-album[${track.product_id}]`,
+              cleanField(track.trackName || '')
+            );
             
             formData.append(`autor-music-album[${track.product_id}]`, cleanField(track.musicAuthor || ''));
             formData.append(`autor-words-album[${track.product_id}]`, cleanField(track.textAuthor || ''));
@@ -926,10 +1077,11 @@ const prepareOrderData = async (): Promise<FormData> => {
     
     const alias = cleanField(f.performerName || '');
     formData.append('alias', alias);
-    
-    formData.append('kuda-reliz1', '1');
-    formData.append('kuda-reliz', '1');
-    formData.append('others-kuda', f.otherPlatform || '');
+
+    const kuda = kudaFieldsFromQuiz3(f);
+    formData.append('kuda-reliz1', kuda.singleKuda1);
+    formData.append('kuda-reliz', kuda.singleKuda);
+    formData.append('others-kuda', kuda.othersKuda);
     formData.append('calendar-reliz', f.releaseDate || '');
     
     const matValue = f.hasProfanity === 'yes' ? '12' : '13';
@@ -950,9 +1102,9 @@ const prepareOrderData = async (): Promise<FormData> => {
       const albumReleaseName = cleanField(f.releaseName || 'Альбом');
       formData.append('name-relize-album', albumReleaseName);
       formData.append('alias-album', alias);
-      formData.append('kuda-reliz-album1', '4');
-      formData.append('kuda-reliz-album', '4');
-      formData.append('others-kuda-album', '');
+      formData.append('kuda-reliz-album1', kuda.albumKuda1);
+      formData.append('kuda-reliz-album', kuda.albumKuda);
+      formData.append('others-kuda-album', kuda.othersKudaAlbum);
       formData.append('calendar-reliz-album', f.releaseDate || '');
       formData.append('mat-album1', matValue);
       formData.append('mat-album', matValue);
@@ -974,17 +1126,26 @@ const prepareOrderData = async (): Promise<FormData> => {
     
     formData.append('citysenship1', '');
     formData.append('citysenship', u.userType === 'individual' ? 'Физическое лицо' : 'Индивидуальный предприниматель');
-    formData.append('select__fizurlico', '');
+    formData.append('select__fizurlico', u.userType === 'entrepreneur' ? 'urlico' : '');
     formData.append('others', '');
-    formData.append('yur-arg-org', u.legalAddress || '');
+    const legalAddr = u.legalAddress || '';
+    const bankInn = u.bankInn || '';
+    const corr = u.correspondentAccount || '';
+    const bankAddr = u.bankLegalAddress || '';
+    formData.append('yur-arg-org', legalAddr);
     formData.append('inn', u.inn || '');
     formData.append('ogrn', u.ogrn || '');
     formData.append('rasy', u.accountNumber || '');
     formData.append('bank', u.bankName || '');
-    formData.append('inn-bank', u.bankInn || '');
+    formData.append('inn-bank', bankInn);
     formData.append('bik', u.bankBik || '');
-    formData.append('kor-s', u.correspondentAccount || '');
-    formData.append('yur-adr-bank', u.bankLegalAddress || '');
+    formData.append('kor-s', corr);
+    formData.append('yur-adr-bank', bankAddr);
+    /* Дубликаты с подчёркиванием — order.php читает $_REQUEST['yur_arg_org'] и т.д. */
+    formData.append('yur_arg_org', legalAddr);
+    formData.append('inn_bank', bankInn);
+    formData.append('kor_s', corr);
+    formData.append('yur_adr_bank', bankAddr);
     
     formData.append('citysenship1', '');
     formData.append('citysenship', formatCitizenship(u.citizenship, u.otherCitizenship));
@@ -1008,8 +1169,12 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('nark', g.hasDrugsMention === 'yes' ? '12' : '13');
     formData.append('narc', g.hasDrugsMention === 'yes' ? '12' : '13');
     formData.append('others-narc', g.drugsTracks || '');
-    formData.append('apple', g.appleMusicLinks || '');
-    formData.append('spotify', g.spotifyLinks || '');
+    const appleLinks = g.appleMusicLinks || '';
+    const spotifyLinks = g.spotifyLinks || '';
+    formData.append('apple', appleLinks);
+    formData.append('spotify', spotifyLinks);
+    formData.append('link-apple', appleLinks);
+    formData.append('link-spotify', spotifyLinks);
     formData.append('link-vk', g.vkLinks || '');
     formData.append('link-yandex', g.yandexMusicLinks || '');
     formData.append('socialartist', g.socialLinks || '');
@@ -1030,13 +1195,36 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('plan', a.promoPlan || '');
     formData.append('link-bandlink', a.bandlinkUrl || '');
     formData.append('promocode', a.promoCode || '');
-    formData.append('promosum', '');
-    
-    const baseAmount = 2590;
-    const finalSum = quiz6Data.value?.promoDiscount 
-      ? Math.floor(baseAmount * (100 - quiz6Data.value.promoDiscount) / 100)
-      : baseAmount;
-    formData.append('sumOrder', String(finalSum));
+    const pdDisc = quiz6Data.value?.promoDiscount ?? 0;
+    const afterPromoTotal = quiz6Data.value?.orderTotalAfterPromo;
+    let promosumStr = '';
+    if (
+      pdDisc > 0 &&
+      pdDisc < 100 &&
+      afterPromoTotal != null &&
+      Number.isFinite(afterPromoTotal)
+    ) {
+      const afterFloor = Math.floor(afterPromoTotal);
+      const approxBefore = Math.round((afterFloor * 100) / (100 - pdDisc));
+      promosumStr = String(Math.max(0, approxBefore - afterFloor));
+    }
+    formData.append('promosum', promosumStr);
+
+    const usedBonuses = Math.max(0, Math.floor(Number(a.usedBonuses || 0)));
+    let sumOrderBeforeBonus = quiz6Data.value?.orderTotalAfterPromo;
+    if (sumOrderBeforeBonus == null || !Number.isFinite(sumOrderBeforeBonus)) {
+      const finalSnap = quiz6Data.value?.finalPayableAmount;
+      if (finalSnap != null && Number.isFinite(finalSnap)) {
+        sumOrderBeforeBonus = Math.max(0, Math.floor(finalSnap + usedBonuses));
+      } else {
+        const baseAmount = 2590;
+        const pd = quiz6Data.value?.promoDiscount || 0;
+        sumOrderBeforeBonus =
+          pd > 0 ? Math.floor(baseAmount * (100 - pd) / 100) : baseAmount;
+      }
+    }
+    formData.append('sumOrder', String(Math.max(0, Math.floor(sumOrderBeforeBonus))));
+    formData.append('refBonus', String(usedBonuses));
     formData.append('policy', a.confirmNoRightsViolation ? 'on' : 'off');
     
     console.log('policy:', a.confirmNoRightsViolation ? 'on' : 'off');
@@ -1212,6 +1400,10 @@ const prepareOrderData = async (): Promise<FormData> => {
 };
 
 const goBack = () => {
+  if (showPaymentWay.value) {
+    resetPaymentWay();
+    return;
+  }
   emit('go-back');
 };
 
@@ -1220,8 +1412,9 @@ const parseOrderPhpPayload = (raw: unknown): { error: number; message: string } 
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'object' && raw !== null && 'error' in raw) {
     const o = raw as { error: number; message?: string };
+    const errNum = Number(o.error);
     return {
-      error: Number(o.error),
+      error: Number.isFinite(errNum) ? errNum : 1,
       message: typeof o.message === 'string' ? o.message : '',
     };
   }
@@ -1231,7 +1424,11 @@ const parseOrderPhpPayload = (raw: unknown): { error: number; message: string } 
       try {
         const o = JSON.parse(jsonMatch[0]) as { error?: number; message?: string };
         if (o.error !== undefined) {
-          return { error: Number(o.error), message: typeof o.message === 'string' ? o.message : '' };
+          const errNum = Number(o.error);
+          return {
+            error: Number.isFinite(errNum) ? errNum : 1,
+            message: typeof o.message === 'string' ? o.message : '',
+          };
         }
       } catch {
         return null;
@@ -1287,6 +1484,12 @@ const mapOrderServerMessageToHint = (message: string): string => {
   }
   if (t.includes('сохранения заказа') || t.includes('создания релиза')) {
     return 'сервер не смог сохранить заказ или создать релиз';
+  }
+  if (t.includes('instrument_right') || t.includes('право владения')) {
+    return 'не заполнены или не приняты данные о правах на треки (тип прав / ссылка на документ)';
+  }
+  if (t.includes('обложк')) {
+    return 'проблема с файлом обложки';
   }
   return message.trim() || 'сервер отклонил запрос без пояснения';
 };
@@ -1433,9 +1636,11 @@ const handleFinish = async () => {
     });
     
     console.log('Quiz6 (Дополнительная информация):', quiz6Data.value?.formData);
-    console.log('Quiz6 (Промо):', {
+    console.log('Quiz6 (Промо и суммы):', {
       promoApplied: quiz6Data.value?.promoApplied,
-      promoDiscount: quiz6Data.value?.promoDiscount
+      promoDiscount: quiz6Data.value?.promoDiscount,
+      orderTotalAfterPromo: quiz6Data.value?.orderTotalAfterPromo,
+      finalPayableAmount: quiz6Data.value?.finalPayableAmount
     });
     
     console.log('Quiz7 (Согласия):', quiz7Data.value?.formData);
@@ -1516,88 +1721,47 @@ const handleFinish = async () => {
         return;
       }
 
-      let paymentUrl: string | null | undefined = null;
-      let orderId: string | number | null | undefined = null;
+      const successData = extractOrderSuccessData(responseData);
+      if (successData && tryShowPaymentWay(successData)) {
+        console.log('💳 Показ PaymentWay:', {
+          order_id: successData.order_id,
+          usdt: usdtPaymentUrlResolved.value,
+          card: cardPaymentUrlResolved.value,
+        });
+        return;
+      }
 
-      if (typeof responseData === 'string') {
-        console.log('🔍 Анализируем строку ответа...');
-        const jsonMatch = responseData.match(/\{.*\}/s);
+      let orderId: string | number | null | undefined =
+        successData?.order_id ??
+        (typeof responseData === 'object' && responseData !== null && 'data' in responseData
+          ? (responseData as { data?: { order_id?: string | number } }).data?.order_id
+          : undefined);
+
+      if (!orderId && typeof responseData === 'string') {
+        const jsonMatch = responseData.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           try {
-            const parsedData = JSON.parse(jsonMatch[0]);
-            console.log('✅ Найден JSON в ответе:', parsedData);
-            if (parsedData.error === 0) {
-              paymentUrl = parsedData.data?.payment_url;
-              orderId = parsedData.data?.order_id;
-              console.log('💰 Извлеченные данные:', { orderId, paymentUrl });
-            }
-          } catch (e) {
-            console.error('❌ Ошибка парсинга JSON:', e);
+            const parsed = JSON.parse(jsonMatch[0]) as { data?: { order_id?: string | number } };
+            orderId = parsed.data?.order_id;
+          } catch {
+            /* ignore */
           }
-        }
-      } else if (typeof responseData === 'object' && responseData !== null) {
-        console.log('🔍 Ответ уже является объектом:', responseData);
-        const o = responseData as { error?: number; data?: { payment_url?: string; order_id?: string | number } };
-        if (o.error === 0) {
-          paymentUrl = o.data?.payment_url;
-          orderId = o.data?.order_id;
-          console.log('💰 Извлеченные данные из объекта:', { orderId, paymentUrl });
         }
       }
 
-      if (paymentUrl) {
-        ElMessage.success('Заказ успешно оформлен! Сейчас вы будете перенаправлены на страницу оплаты...');
-        
-        const baseUrl = window.location.origin;
-        const fullPaymentUrl = paymentUrl.startsWith('http') 
-          ? paymentUrl 
-          : baseUrl + (paymentUrl.startsWith('/') ? paymentUrl : '/' + paymentUrl);
-        
-        console.log('🔗 Перенаправляем на:', fullPaymentUrl);
-        
-        setTimeout(() => {
-          window.location.href = fullPaymentUrl;
-        }, 1500);
-        
-        return;
-      } 
-      else if (
-        responseData &&
-        typeof responseData === 'object' &&
-        (responseData as { payment_url?: string }).payment_url
-      ) {
-        paymentUrl = (responseData as { payment_url: string }).payment_url;
-        orderId = (responseData as { order_id?: string | number }).order_id;
-        
-        ElMessage.success('Заказ успешно оформлен! Сейчас вы будете перенаправлены на страницу оплаты...');
-        
-        const baseUrl = window.location.origin;
-        const fullPaymentUrl = paymentUrl.startsWith('http') 
-          ? paymentUrl 
-          : baseUrl + (paymentUrl.startsWith('/') ? paymentUrl : '/' + paymentUrl);
-        
-        console.log('🔗 Перенаправляем на альтернативный URL:', fullPaymentUrl);
-        
-        setTimeout(() => {
-          window.location.href = fullPaymentUrl;
-        }, 1500);
-        
-        return;
-      }
-      else if (orderId) {
+      if (orderId) {
         console.log('✅ Заказ создан, ID:', orderId);
         ElMessage.success(`Заказ №${orderId} успешно оформлен!`);
         emit('finish');
         return;
       }
-      else {
-        console.error('❌ Payment URL не найден в ответе сервера');
-        ElMessage.warning(
-          'Заказ оформлен, но ссылка на оплату не получена. Проверьте правильность заполнения данных или пришлите скриншот ошибки в тех. поддержку',
-        );
-        emit('finish');
-        return;
-      }
+
+      console.error('❌ Нет данных оплаты и order_id в ответе сервера');
+      ElMessage.warning(
+        'Заказ оформлен, но ссылка на оплату не получена. Проверьте правильность заполнения данных или пришлите скриншот ошибки в тех. поддержку',
+      );
+      emit('finish');
+      return;
     } else {
       console.error('❌ Пустой ответ от сервера');
       ElMessage.error({

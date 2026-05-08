@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, shallowRef, computed, onMounted, onUnmounted, watch } from "vue";
 import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import PersonalSVG from "@/uikit/icon/PersonalSVG.vue";
@@ -7,6 +7,8 @@ import MoreSVG from "@/uikit/icon/MoreSVG.vue";
 import ButtonSVG from "@/uikit/icon/ButtonSVG.vue";
 import ClipSVG from "@/uikit/icon/ClipSVG.vue";
 import { sendRequest } from '@/utils/api';
+
+const PARTNER_REFERRALS_URL = '/ajax_vue/ajax/partnerReferrals.php';
 
 const isLoading = ref<boolean>(false);
 const loadingSvg = `
@@ -36,9 +38,16 @@ const referralData = ref({
   link: ''
 });
 
-const referralUsers = ref<ReferralUser[]>([]);
+const referralUsers = shallowRef<ReferralUser[]>([]);
+/** Всего рефералов; в массиве только текущая страница с сервера */
+const referralUsersTotal = ref(0);
 const isAccepting = ref(false);
 const copySuccess = ref(false);
+const showConditionsModal = ref(false);
+
+const closeConditionsModal = () => {
+  showConditionsModal.value = false;
+};
 
 /** При ширине окна < 540px и ширине ячейки email > 130px — обрезка; раскрытие по клику */
 const PARTNER_EMAIL_VIEWPORT_MAX = 539;
@@ -116,27 +125,25 @@ const onPartnerEmailViewportChange = () => {
 const partnersPerPage = ref<number>(6);
 const currentPartnersPage = ref<number>(1);
 
-// Вычисляемые свойства для партнеров
 const totalPartnersPages = computed(() => {
-  return Math.ceil(referralUsers.value.length / partnersPerPage.value);
+  const total = referralUsersTotal.value;
+  const perPage = partnersPerPage.value;
+  if (total <= 0) return 1;
+  return Math.max(1, Math.ceil(total / perPage));
 });
 
-const paginatedPartners = computed(() => {
-  const start = (currentPartnersPage.value - 1) * partnersPerPage.value;
-  const end = start + partnersPerPage.value;
-  return referralUsers.value.slice(start, end).map((user: ReferralUser) => ({
-    id: parseInt(user.ID),
+const paginatedPartners = computed(() =>
+  referralUsers.value.map((user: ReferralUser) => ({
+    id: parseInt(user.ID, 10),
     name: user.LOGIN || 'Без имени',
     email: user.EMAIL,
     date: formatDate(user.DATE_REGISTER),
     earnings: user.PAYOUT,
-    releases: formatReleases(user.UF_RELEASES)
-  }));
-});
+    releases: formatReleases(user.UF_RELEASES),
+  }))
+);
 
-const showPartnersPagination = computed(() => {
-  return referralUsers.value.length > partnersPerPage.value;
-});
+const showPartnersPagination = computed(() => referralUsersTotal.value > partnersPerPage.value);
 
 // Форматирование даты
 const formatDate = (dateString: string) => {
@@ -158,40 +165,59 @@ const formatReleases = (releases: string | number) => {
   return `${count} релизов`;
 };
 
-// Методы для пагинации партнеров
-const nextPartnersPage = () => {
-  if (currentPartnersPage.value < totalPartnersPages.value) {
-    currentPartnersPage.value++;
-    expandedPartnerEmailIds.value = {};
-  }
+const nextPartnersPage = async () => {
+  if (currentPartnersPage.value >= totalPartnersPages.value) return;
+  expandedPartnerEmailIds.value = {};
+  await fetchPartnerReferrals(currentPartnersPage.value + 1);
 };
 
-const prevPartnersPage = () => {
-  if (currentPartnersPage.value > 1) {
-    currentPartnersPage.value--;
-    expandedPartnerEmailIds.value = {};
-  }
+const prevPartnersPage = async () => {
+  if (currentPartnersPage.value <= 1) return;
+  expandedPartnerEmailIds.value = {};
+  await fetchPartnerReferrals(currentPartnersPage.value - 1);
 };
 
-// Загрузка данных
-const fetchData = async () => {
+type PartnerReferralsProfile = {
+  referralUsers?: ReferralUser[];
+  referralUsersTotal?: number;
+  referralUsersPage?: number;
+  referralUsersPerPage?: number;
+};
+
+const fetchPartnerReferrals = async (page = 1) => {
   isLoading.value = true;
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Данные из API:', response.data);
-    
-    if (response.data && response.data.referral) {
+    const perPage = partnersPerPage.value;
+    const sep = PARTNER_REFERRALS_URL.includes('?') ? '&' : '?';
+    const url = `${PARTNER_REFERRALS_URL}${sep}page=${page}&per_page=${perPage}`;
+    const response = await sendRequest('get', url, {});
+
+    const payload = response.data as Record<string, unknown> | undefined;
+
+    const refObj = payload?.referral as { isAgreed?: boolean; link?: string } | undefined;
+    if (refObj) {
       referralData.value = {
-        isAgreed: response.data.referral.isAgreed || false,
-        link: response.data.referral.link || ''
+        isAgreed: !!refObj.isAgreed,
+        link: typeof refObj.link === 'string' ? refObj.link : '',
       };
     }
-    
-    if (response.data && response.data.profile && response.data.profile.referralUsers) {
-      referralUsers.value = response.data.profile.referralUsers || [];
+
+    const prof = payload?.profile as PartnerReferralsProfile | undefined;
+    const list = Array.isArray(prof?.referralUsers) ? prof!.referralUsers! : [];
+    referralUsers.value = list;
+
+    const total =
+      typeof prof?.referralUsersTotal === 'number' ? prof.referralUsersTotal : list.length;
+    referralUsersTotal.value = Math.max(0, total);
+
+    const serverPage = prof?.referralUsersPage;
+    if (typeof serverPage === 'number' && serverPage >= 1) {
+      currentPartnersPage.value = serverPage;
+    } else {
+      currentPartnersPage.value = page;
     }
   } catch (error) {
-    console.error('Ошибка при загрузке данных:', error);
+    console.error('Ошибка при загрузке данных партнёрки:', error);
   } finally {
     isLoading.value = false;
   }
@@ -204,8 +230,7 @@ const acceptAgreement = async () => {
     const response = await sendRequest('post', '/auth/profile/agreeReferalProgram.php', {});
     
     if (response.data && response.data.success) {
-      // Обновляем данные
-      await fetchData();
+      await fetchPartnerReferrals(1);
     } else {
       alert('Ошибка при принятии условий');
     }
@@ -238,10 +263,15 @@ onMounted(() => {
   );
   isPartnerEmailNarrowViewport.value = partnerEmailMql.matches;
   partnerEmailMql.addEventListener("change", onPartnerEmailViewportChange);
-  fetchData();
+  fetchPartnerReferrals(1);
+});
+
+watch(showConditionsModal, (open) => {
+  document.body.style.overflow = open ? "hidden" : "";
 });
 
 onUnmounted(() => {
+  document.body.style.overflow = "";
   partnerEmailMql?.removeEventListener("change", onPartnerEmailViewportChange);
   partnerEmailMql = null;
   partnerEmailCellObservers.forEach((ro) => ro.disconnect());
@@ -393,12 +423,23 @@ onUnmounted(() => {
               <h5 class="partner__conditions_head">условия участия</h5>
               <p class="partner__conditions_desc">Детали начисления за повторные релизы и приглашенных друзей указаны ниже в разделе «Условия участия».</p>
             </div>
-            <button 
-              class="partner__conditions_button button__red"
-              :disabled="referralData.isAgreed"
-            >
-              <span>{{ referralData.isAgreed ? 'Условия приняты' : 'стать партнером' }}</span>
-            </button>
+            <div class="partner__conditions_ctas">
+              <button
+                type="button"
+                class="partner__conditions_button button__red"
+                :disabled="referralData.isAgreed || isAccepting"
+                @click="acceptAgreement"
+              >
+                <span>{{ referralData.isAgreed ? 'Условия приняты' : isAccepting ? 'Принятие...' : 'стать партнером' }}</span>
+              </button>
+              <button
+                type="button"
+                class="partner__conditions_button partner__link button__red"
+                @click="showConditionsModal = true"
+              >
+                <span>Условия</span>
+              </button>
+            </div>
           </div>
           <div class="partner__referral">
             <div class="partner__referral_info">
@@ -440,6 +481,153 @@ onUnmounted(() => {
     </div>
   </div>
 </section>
+
+<Teleport to="body">
+  <div
+    v-if="showConditionsModal"
+    class="partner__conditions_modal_overlay"
+    @click.self="closeConditionsModal"
+  >
+    <div
+      class="partner__conditions_modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="partner-conditions-modal-title"
+    >
+      <div class="partner__conditions_modal_header">
+        <h2 id="partner-conditions-modal-title" class="partner__conditions_modal_title">
+          Условия участия
+        </h2>
+        <button
+          type="button"
+          class="partner__conditions_modal_close"
+          aria-label="Закрыть"
+          @click="closeConditionsModal"
+        >
+          ×
+        </button>
+      </div>
+      <div class="partner__conditions_modal_body">
+        <section class="partner__conditions_modal_section">
+          <h3 class="partner__conditions_modal_heading">Общие понятия</h3>
+          <ul class="partner__conditions_modal_defs">
+            <li>
+              <strong>Партнёр</strong> — Пользователь, который стал частью реферальной
+              программы Правообладателя и добровольно распространяет свой уникальный промокод
+              для привлечения новых Пользователей.
+            </li>
+            <li>
+              <strong>Промокод</strong> — уникальный набор символов, генерируемый Сайтом для
+              Партнёров, для привлечения Рефералов.
+            </li>
+            <li>
+              <strong>Реферал</strong> — Пользователь, зарегистрировавшийся на Сайте по
+              Промокоду Партнёра.
+            </li>
+            <li>
+              <strong>Реферальная программа</strong> — система бонусных начислений для
+              Партнёров внутри Сайта за приглашение уникальных Рефералов.
+            </li>
+          </ul>
+        </section>
+
+        <section class="partner__conditions_modal_section">
+          <h3 class="partner__conditions_modal_heading">Общие условия</h3>
+          <ol class="partner__conditions_modal_list">
+            <li>
+              Принимать участие в партнерской программе может любой зарегистрированный и
+              подтвердивший свой email пользователь сайта
+            </li>
+            <li>
+              Каждый зарегистрированный пользователь получает партнерскую ссылку. Она
+              отображается в поле: «Ваша реферальная ссылка»
+            </li>
+            <li>Приглашённые вами пользователи должны ввести вашу ссылку при регистрации.</li>
+            <li>
+              Каждый новый пользователь, зарегистрировавшийся по Вашей ссылке, становится вашим
+              Рефералом. История регистраций по партнерской ссылке отображается в поле: «ПАРТНЕРЫ,
+              ЗАРЕГИСТРИРОВАВШИЕСЯ ПО ВАШЕЙ ССЫЛКЕ».
+            </li>
+          </ol>
+        </section>
+
+        <section class="partner__conditions_modal_section">
+          <h3 class="partner__conditions_modal_heading">Обязанности пользователя реферальной программы</h3>
+          <ol class="partner__conditions_modal_list">
+            <li>Использовать только одну учётную запись на Сайте.</li>
+            <li>Не использовать самореферование для обманного получения реферальных начислений.</li>
+            <li>Не использовать дубликатных учётных записей на Сайте.</li>
+            <li>Не распространять свой партнёрский Промокод с помощью спама.</li>
+            <li>
+              Не распространять материал, нарушающий авторские права (мелодии, тексты,
+              исполнение, песни). Если Реферал заполнил заявку, но его контент будет отклонён из-за
+              нарушения авторских прав, то бонус Партнёру за такую заявку не начисляется.
+            </li>
+            <li>Не привлекать новых Пользователей с использованием фальшивых или недостоверных данных.</li>
+            <li>Хранить в тайне и не раскрывать третьим лицам информацию о доступе к своему Личному кабинету.</li>
+            <li>Обеспечить конфиденциальность полученной при сотрудничестве с Правообладателем информации.</li>
+            <li>
+              Незамедлительно информировать Правообладателя обо всех ставших ему известных фактах
+              противоправного использования Реферальной программы третьими лицами.
+            </li>
+            <li>
+              Не осуществлять массовые рассылки сообщений в адрес других Пользователей Сайта и
+              Реферальной программы без их согласия.
+            </li>
+          </ol>
+        </section>
+
+        <section class="partner__conditions_modal_section">
+          <h3 class="partner__conditions_modal_heading">Порядок начислений и использования бонусов</h3>
+          <ol class="partner__conditions_modal_list">
+            <li>
+              Реферальный бонус для россиян за одного пришедшего клиента — 400 рублей. Бонус
+              начисляется после того, как реферал оплатит первый релиз (неважно сингл это или
+              альбом — сумма начислений не меняется). За второй релиз своего реферала партнёр также
+              получит выплату, но в меньшем количестве — для России 300 рублей, за третий релиз 200
+              рублей. Если реферал выкладывает 4 релиз и далее, то партнёр получает с каждого
+              следующего релиза 100 рублей.
+            </li>
+            <li>
+              Если реферал партнёра сам становится партнёром (то есть также зовёт других
+              пользователей по уже собственной ссылке), то первоначальный партнёр также получает
+              денежную выплату с КАЖДОГО релиза рефералов реферала: 100 рублей. Если эта схема идёт
+              дальше одного нового реферала, то самый первоначальный партнёр получает 50 и так до 5
+              порядка, от шестого человека в схеме первоначальный партнёр НЕ ПОЛУЧАЕТ бонусы.
+            </li>
+            <li>Все бонусы начисляются через 2 недели после оплаты релиза вашими рефералами.</li>
+            <li>
+              Вы вправе использовать бонусы 2 способами: использовать их внутри сайта для частичной
+              или полной оплаты наших услуг по дистрибуции или вывести себе на карту реальные деньги.
+              В случае вывода на карту — вы получите сумму вдвое меньшую количеству ваших бонусов
+              (если у вас 1 000 бонусных рублей, то при выводе вы получите 500), а все остальные
+              бонусы сгорят.
+            </li>
+          </ol>
+        </section>
+
+        <section class="partner__conditions_modal_section">
+          <h3 class="partner__conditions_modal_heading">Права компании</h3>
+          <ol class="partner__conditions_modal_list">
+            <li>
+              Компания оставляет за собой право проверить каждую успешную заявку на дистрибуцию на
+              предмет мошенничества.
+            </li>
+            <li>
+              Компания оставляет за собой право отказаться от выплаты вознаграждений в случае
+              обнаружения мошеннических действий или нарушений условий реферальной программы со
+              стороны реферала.
+            </li>
+          </ol>
+        </section>
+
+        <p class="partner__conditions_modal_footer_text">
+          Вступая в партнерскую программу VAUVISION вы соглашаетесь со всеми условиями.
+        </p>
+      </div>
+    </div>
+  </div>
+</Teleport>
 </template>
 
 <style lang="scss" scoped>
@@ -835,6 +1023,23 @@ onUnmounted(() => {
     }
   }
 
+  &__conditions_ctas {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    a,
+    button.partner__conditions_button {
+      text-decoration: none;
+    }
+
+    button.partner__conditions_button {
+      font: inherit;
+      text-align: center;
+      cursor: pointer;
+    }
+  }
+
   &__conditions_info,
   &__referral_info {
     display: flex;
@@ -913,6 +1118,130 @@ onUnmounted(() => {
 
   &__referral_notice {
     width: 100%;
+  }
+
+  &__link{
+    span{
+      font-family: var(--text-font);
+      font-weight: 400;
+      letter-spacing: 0;
+      color: var(--white);
+      font-size: 14px;
+      line-height: 140%;
+    }
+  }
+
+  &__conditions_modal_overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  &__conditions_modal {
+    display: flex;
+    flex-direction: column;
+    max-width: 640px;
+    width: 100%;
+    max-height: min(90vh, 900px);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  &__conditions_modal_header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  &__conditions_modal_title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 110%;
+    text-transform: uppercase;
+  }
+
+  &__conditions_modal_close {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    margin: -8px -8px -8px 0;
+    border: none;
+    background: transparent;
+    font-size: 28px;
+    line-height: 100%;
+    color: var(--text-gray);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.06);
+      color: var(--text);
+    }
+  }
+
+  &__conditions_modal_body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 20px 24px 28px;
+    font-size: 14px;
+    line-height: 140%;
+    color: var(--text);
+  }
+
+  &__conditions_modal_section {
+    margin-bottom: 22px;
+
+    &:last-of-type {
+      margin-bottom: 16px;
+    }
+  }
+
+  &__conditions_modal_heading {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    text-transform: none;
+  }
+
+  &__conditions_modal_defs {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__conditions_modal_list {
+    margin: 0;
+    padding-left: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    li {
+      padding-left: 4px;
+    }
+  }
+
+  &__conditions_modal_footer_text {
+    margin: 0;
+    font-weight: 500;
   }
 }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue';
-import { sendRequest } from '@/utils/api';
+import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
 import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import ArrowSVG from "@/uikit/icon/ArrowSVG.vue";
@@ -95,9 +95,8 @@ const fetchData = async () => {
   error.value = null;
   
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Данные из API:', response.data);
-    
+    const response = await fetchSharedCabinetGetData();
+
     // Проверяем, есть ли данные FAQ в ответе
     if (response.data && response.data.education && response.data.education.faq) {
       const apiFaq = response.data.education.faq;

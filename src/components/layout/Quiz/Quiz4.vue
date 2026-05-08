@@ -300,51 +300,71 @@ const loadUserData = async () => {
       formData.registrationAddress = user.uf_address;
       console.log('✅ Loaded registration address');
     }
-    
-    // Данные для ИП (только если поля пустые)
-    let hasIPData = false;
-    
-    if (user.uf_inn && !formData.inn) {
-      formData.inn = user.uf_inn;
-      hasIPData = true;
-      console.log('✅ Loaded INN');
-    }
-    
-    if (user.uf_ogrn && !formData.ogrn) {
-      formData.ogrn = user.uf_ogrn;
-      hasIPData = true;
-      console.log('✅ Loaded OGRN');
-    }
-    
-    if (user.uf_rs && !formData.accountNumber) {
-      formData.accountNumber = user.uf_rs;
-      hasIPData = true;
-      console.log('✅ Loaded account number');
-    }
-    
-    if (user.uf_bik && !formData.bankBik) {
-      formData.bankBik = user.uf_bik;
-      hasIPData = true;
-      console.log('✅ Loaded BIK');
-    }
-    
-    if (user.uf_korr && !formData.correspondentAccount) {
-      formData.correspondentAccount = user.uf_korr;
-      hasIPData = true;
-      console.log('✅ Loaded correspondent account');
-    }
-    
-    // Если есть данные ИП и тип еще не выбран, переключаем на ИП
-    // НО! Не перезаписываем, если пользователь уже выбрал individual
-    if (hasIPData && formData.userType === 'individual') {
-      // Проверяем, были ли уже какие-то данные в форме или это чистая загрузка
-      const hasExistingData = Object.values(formData).some(val => val && val !== 'individual');
-      if (!hasExistingData) {
-        formData.userType = 'entrepreneur';
-        console.log('✅ Switched to entrepreneur mode due to IP data');
+
+    const str = (v: unknown) => (v == null ? '' : String(v).trim());
+
+    /** Тип реквизитов в профиле: физлицо / ИП / неизвестно */
+    const resolveProfileBankType = (): 'individual' | 'entrepreneur' | null => {
+      const lic = Number(user.uf_lico);
+      if (lic === 2) return 'entrepreneur';
+      if (lic === 1) return 'individual';
+      const hasIp =
+        str(user.uf_fioip) ||
+        str(user.uf_rsip) ||
+        str(user.uf_bikip) ||
+        str(user.uf_addressip);
+      const hasFiz =
+        str(user.uf_fiofiz) && str(user.uf_rs) && str(user.uf_bik);
+      if (hasIp) return 'entrepreneur';
+      if (hasFiz) return 'individual';
+      return null;
+    };
+
+    const profileBankType = resolveProfileBankType();
+
+    const clearEntrepreneurOnlyFields = () => {
+      formData.legalAddress = '';
+      formData.inn = '';
+      formData.ogrn = '';
+      formData.accountNumber = '';
+      formData.bankName = '';
+      formData.bankInn = '';
+      formData.bankBik = '';
+      formData.correspondentAccount = '';
+      formData.bankLegalAddress = '';
+    };
+
+    if (profileBankType === 'individual') {
+      formData.userType = 'individual';
+      clearEntrepreneurOnlyFields();
+    } else if (profileBankType === 'entrepreneur') {
+      formData.userType = 'entrepreneur';
+      const digits = (v: unknown) => str(v).replace(/\s/g, '');
+
+      if (Number(user.uf_lico) === 2) {
+        formData.legalAddress = str(user.uf_addressip);
+        formData.inn = str(user.uf_inn);
+        formData.ogrn = str(user.uf_ogrn);
+        formData.accountNumber = digits(user.uf_rsip);
+        formData.bankBik = digits(user.uf_bikip);
+        formData.correspondentAccount = digits(user.uf_korr);
+        console.log('✅ Реквизиты ИП синхронизированы с профилем (UF_LICO=2)');
+      } else {
+        const setIf = (key: keyof typeof formData, raw: unknown, strip = false) => {
+          let t = str(raw);
+          if (strip && t) t = t.replace(/\s/g, '');
+          if (t) (formData as Record<string, string>)[key] = t;
+        };
+        setIf('legalAddress', user.uf_addressip);
+        setIf('inn', user.uf_inn);
+        setIf('ogrn', user.uf_ogrn);
+        setIf('accountNumber', user.uf_rsip, true);
+        setIf('bankBik', user.uf_bikip, true);
+        setIf('correspondentAccount', user.uf_korr, true);
+        console.log('✅ Подставлены реквизиты ИП из профиля');
       }
     }
-    
+
   } catch (error) {
     console.error('Quiz4: Ошибка загрузки данных пользователя:', error);
   }

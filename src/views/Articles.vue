@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import ButtonSVG from "@/uikit/icon/ButtonSVG.vue";
-import { sendRequest } from '@/utils/api';
+import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
 
 const isLoading = ref<boolean>(false);
 const loadingSvg = `
@@ -78,9 +78,8 @@ const getFullUrl = (path: string) => {
 const fetchData = async () => {
   isLoading.value = true;
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Данные из API:', response.data);
-    
+    const response = await fetchSharedCabinetGetData();
+
     if (response.data && response.data.articles) {
       articles.value = response.data.articles || [];
     }

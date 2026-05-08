@@ -1,8 +1,10 @@
 <script lang="ts" setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { sendRequest, FileRequest } from '@/utils/api';
-import { useRouter } from 'vue-router';
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { sendRequest, FileRequest, postUrlEncodedRequest } from '@/utils/api';
+import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
+import { useRoute, useRouter } from 'vue-router';
+import type { LocationQuery } from 'vue-router';
 import Tr from "@/i18n/translation";
 
 const loading = ref<boolean>(true); // Изначально true, пока грузятся все данные
@@ -26,6 +28,132 @@ import PhotoSVG from "@/uikit/icon/PhotoSVG.vue";
 import UploadSVG from "@/uikit/icon/UploadSVG.vue";
 
 const router = useRouter();
+const route = useRoute();
+
+const highlightPassportSection = ref(false);
+const highlightBankSection = ref(false);
+const highlightSectionFadeOut = ref(false);
+let releaseHighlightFadeTimer: number | null = null;
+let releaseHighlightClearTimer: number | null = null;
+const HIGHLIGHT_HOLD_MS = 7000;
+const HIGHLIGHT_FADE_MS = 600;
+
+let releaseBlockedHandled = false;
+
+const settingQueryWithoutReleaseBlock = (): LocationQuery => {
+  const q = { ...route.query };
+  delete q.releaseBlocked;
+  delete q.focus;
+  return q;
+};
+
+const clearReleaseHighlightTimers = () => {
+  if (releaseHighlightFadeTimer != null) {
+    clearTimeout(releaseHighlightFadeTimer);
+    releaseHighlightFadeTimer = null;
+  }
+  if (releaseHighlightClearTimer != null) {
+    clearTimeout(releaseHighlightClearTimer);
+    releaseHighlightClearTimer = null;
+  }
+};
+
+const handleBlockedReleaseFromQuiz = async () => {
+  if (
+    route.query.releaseBlocked !== '1' ||
+    loading.value ||
+    releaseBlockedHandled
+  ) {
+    return;
+  }
+
+  releaseBlockedHandled = true;
+
+  const focusRaw = route.query.focus;
+  const section =
+    typeof focusRaw === 'string' && focusRaw === 'requisites'
+      ? 'requisites'
+      : ('passport' as const);
+
+  try {
+    await router.replace(
+      Tr.i18nRoute({
+        name: 'setting',
+        query: settingQueryWithoutReleaseBlock(),
+      }),
+    );
+
+    await nextTick();
+    await nextTick();
+
+    await refreshUserData();
+
+    const anchorId =
+      section === 'requisites' ? 'settings-bank-requisites' : 'settings-passport';
+    const anchor = document.getElementById(anchorId);
+    const scrollToAnchor = () =>
+      anchor?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    scrollToAnchor();
+    requestAnimationFrame(() => scrollToAnchor());
+
+    if (section === 'requisites') {
+      highlightBankSection.value = true;
+    } else {
+      highlightPassportSection.value = true;
+    }
+
+    const text =
+      section === 'requisites'
+        ? 'Чтобы выложить релиз, заполните банковские реквизиты в блоке ниже и сохраните их.'
+        : 'Чтобы выложить релиз, заполните паспортные данные (кнопка «Изменить» в блоке ниже).';
+
+    const scrollSave = { x: window.scrollX, y: window.scrollY };
+
+    const restoreAfterDialog = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (anchor?.isConnected) {
+            anchor.scrollIntoView({ behavior: 'auto', block: 'center' });
+          } else {
+            window.scrollTo({
+              left: scrollSave.x,
+              top: scrollSave.y,
+              behavior: 'auto',
+            });
+          }
+        });
+      });
+    };
+
+    try {
+      await ElMessageBox.alert(text, 'Нужно заполнить профиль', {
+        confirmButtonText: 'Понятно',
+        type: 'warning',
+        lockScroll: false,
+      });
+    } catch {
+      /* закрыли диалог */
+    } finally {
+      restoreAfterDialog();
+      clearReleaseHighlightTimers();
+      releaseHighlightFadeTimer = window.setTimeout(() => {
+        releaseHighlightFadeTimer = null;
+        highlightSectionFadeOut.value = true;
+        releaseHighlightClearTimer = window.setTimeout(() => {
+          releaseHighlightClearTimer = null;
+          highlightBankSection.value = false;
+          highlightPassportSection.value = false;
+          highlightSectionFadeOut.value = false;
+        }, HIGHLIGHT_FADE_MS);
+      }, HIGHLIGHT_HOLD_MS);
+    }
+  } finally {
+    releaseBlockedHandled = false;
+  }
+};
+
+const profileRegion = ref('Russia');
+const isRussia = computed(() => profileRegion.value === 'Russia');
 
 // Тип банковских данных
 const bankDetailsType = ref<'individual' | 'entrepreneur'>('individual');
@@ -63,6 +191,11 @@ const bankDetails = reactive({
     bik: '',
     correspondentAccount: '',
     email: ''
+  },
+  international: {
+    binancePayId: '',
+    cardNumber: '',
+    cryptoWallet: ''
   }
 })
 
@@ -78,7 +211,8 @@ const errors = reactive({
   passport: {} as Record<string, string>,
   bankDetails: {
     individual: {} as Record<string, string>,
-    entrepreneur: {} as Record<string, string>
+    entrepreneur: {} as Record<string, string>,
+    international: {} as Record<string, string>
   }
 })
 
@@ -97,14 +231,65 @@ const showDeleteModal = ref(false)
 // Данные формы паспорта
 const passportForm = reactive({
   citizenship: '',
+  otherCitizenship: '',
   issuedBy: '',
   fam: '',
   imya: '',
   otch: '',
   number: '',
   date: '',
-  adress: ''
+  adress: '',
 })
+
+/** `settings.passport` из ответа кабинета (getData / fetchSharedCabinetGetData) */
+interface SettingsPassportPayload {
+  citizenship?: string
+  issuedBy?: string
+  familyName?: string
+  firstName?: string
+  patronymic?: string
+  issueDate?: string
+  passportSeries?: string
+  registrationAddress?: string
+}
+
+const PASSPORT_KNOWN_CITIZENSHIPS = new Set([
+  'Россия',
+  'Беларусь',
+  'Казахстан',
+  'Армения',
+  'Кыргызстан',
+])
+
+function mapStoredCitizenshipForForm(raw: string): {
+  citizenship: string
+  otherCitizenship: string
+} {
+  const c = (raw || '').trim()
+  if (!c) return { citizenship: '', otherCitizenship: '' }
+  const ruAliases = new Set(['РФ', 'Российская Федерация', 'Russia', 'RU'])
+  if (ruAliases.has(c) || c === 'Россия') {
+    return { citizenship: 'Россия', otherCitizenship: '' }
+  }
+  if (PASSPORT_KNOWN_CITIZENSHIPS.has(c)) {
+    return { citizenship: c, otherCitizenship: '' }
+  }
+  return { citizenship: 'Другое', otherCitizenship: c }
+}
+
+function applyPassportFromApi(passport: SettingsPassportPayload | undefined) {
+  if (!passport) return
+  const mapped = mapStoredCitizenshipForForm(passport.citizenship || '')
+  passportForm.citizenship = mapped.citizenship
+  passportForm.otherCitizenship = mapped.otherCitizenship
+  passportForm.issuedBy = passport.issuedBy || ''
+  passportForm.fam = passport.familyName || ''
+  passportForm.imya = passport.firstName || ''
+  passportForm.otch = passport.patronymic || ''
+  passportForm.number = passport.passportSeries || ''
+  passportForm.adress = passport.registrationAddress || ''
+  passportForm.date = passport.issueDate || ''
+}
 
 // Текст подтверждения удаления
 const deleteConfirmText = ref('')
@@ -180,6 +365,23 @@ const validateBankDetails = () => {
   }
 }
 
+const validateInternationalBankDetails = (): boolean => {
+  errors.bankDetails.international = {}
+  const intlErrors: Record<string, string> = {}
+  const bin = bankDetails.international.binancePayId.trim()
+  if (bin && (bin.length < 9 || bin.length > 10)) {
+    intlErrors.binancePayId = 'Binance ID / Pay ID: 9–10 символов'
+  }
+  const card = bankDetails.international.cardNumber.trim()
+  const wallet = bankDetails.international.cryptoWallet.trim()
+  if (!bin && !card && !wallet) {
+    intlErrors.general =
+      'Укажите хотя бы одно: Binance ID / Pay ID, карту РФ или адрес USDT (BEP-20)'
+  }
+  errors.bankDetails.international = intlErrors
+  return Object.keys(intlErrors).length === 0
+}
+
 // Проверка, есть ли ошибки в основной форме
 const hasFormErrors = computed(() => {
   return Object.values(errors).some(error => 
@@ -231,6 +433,7 @@ const closeDeleteModal = () => {
 // Очистка формы паспорта
 const clearPassportForm = () => {
   passportForm.citizenship = ''
+  passportForm.otherCitizenship = ''
   passportForm.issuedBy = ''
   passportForm.fam = ''
   passportForm.imya = ''
@@ -241,10 +444,17 @@ const clearPassportForm = () => {
   ElMessage.success('Форма очищена')
 }
 
-// Загрузка данных паспорта
-const loadPassportData = () => {
-  // Здесь должен быть запрос к API для получения текущих данных
-}
+/** Данные паспорта подтягиваются в refreshUserData из settings.passport */
+const loadPassportData = () => {}
+
+watch(
+  () => passportForm.citizenship,
+  (v) => {
+    if (v !== 'Другое') {
+      passportForm.otherCitizenship = ''
+    }
+  },
+)
 
 // Сохранение паспортных данных
 const savePassportData = async () => {
@@ -252,19 +462,37 @@ const savePassportData = async () => {
     ElMessage.error('Заполните обязательные поля (фамилия, имя, серия и номер)')
     return
   }
-  
+  if (!passportForm.citizenship?.trim()) {
+    ElMessage.error('Укажите гражданство')
+    return
+  }
+  if (
+    passportForm.citizenship === 'Другое' &&
+    !passportForm.otherCitizenship?.trim()
+  ) {
+    ElMessage.error('Укажите гражданство в поле «Другое гражданство»')
+    return
+  }
+
   loading.value = true;
   isOperationLoading.value = true
   try {
-    const passportData = {
-      'citysenship-profile-others': passportForm.citizenship,
+    const passportData: Record<string, string> = {
+      'citysenship-profile':
+        passportForm.citizenship === 'Другое'
+          ? 'Другое'
+          : passportForm.citizenship,
       'issued-profile': passportForm.issuedBy,
-      'fam': passportForm.fam,
+      fam: passportForm.fam,
       'number-profile': passportForm.number,
-      'imya': passportForm.imya,
+      imya: passportForm.imya,
       'date-profile': passportForm.date,
-      'otch': passportForm.otch,
-      'adress-profile': passportForm.adress
+      otch: passportForm.otch,
+      'adress-profile': passportForm.adress,
+    }
+    if (passportForm.citizenship === 'Другое') {
+      passportData['citysenship-profile-others'] =
+        passportForm.otherCitizenship.trim()
     }
     
     const response = await sendRequest(
@@ -498,7 +726,8 @@ const submitIndividualBankDetails = async () => {
     
     console.log('Банковские данные физлица сохранены:', response.data)
     ElMessage.success('Банковские данные сохранены успешно')
-    
+    await refreshUserData()
+
   } catch (error: any) {
     console.error('Ошибка при сохранении банковских данных:', error)
     
@@ -548,7 +777,8 @@ const submitEntrepreneurBankDetails = async () => {
     
     console.log('Банковские данные ИП сохранены:', response.data)
     ElMessage.success('Банковские данные сохранены успешно')
-    
+    await refreshUserData()
+
   } catch (error: any) {
     console.error('Ошибка при сохранении банковских данных:', error)
     
@@ -630,55 +860,80 @@ const uploadProfileImage = async (event: Event) => {
 // Функция для обновления данных с сервера
 const refreshUserData = async () => {
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Данные обновлены с сервера:', response.data);
-    
-    if (response.data && response.data.user) {
+    const response = await fetchSharedCabinetGetData();
+    const payload = response.data as Record<string, unknown> | undefined;
+
+    if (payload?.user) {
+      const u = payload.user as Record<string, unknown>;
       // Обновляем фото профиля из ответа API
-      if (response.data.user.personalPhoto) {
-        profileImage.value = response.data.user.personalPhoto;
+      if (u.personalPhoto) {
+        profileImage.value = u.personalPhoto as string;
       }
       
       // Обновляем остальные данные пользователя
-      formData.firstName = response.data.user.name || '';
-      formData.lastName = response.data.user.lastName || '';
-      formData.nickname = response.data.user.login || '';
-      formData.email = response.data.user.email || '';
+      formData.firstName = (u.name as string) || '';
+      formData.lastName = (u.lastName as string) || '';
+      formData.nickname = (u.login as string) || '';
+      formData.email = (u.email as string) || '';
       
-      // Обновляем страну из профиля если есть
-      if (response.data.profile && response.data.profile.region) {
-        formData.country = response.data.profile.region;
-      }
-      
-      // Загружаем банковские данные
-      if (response.data.settings && response.data.settings.requisites) {
-        const requisites = response.data.settings.requisites;
-        
-        // Данные физлица
-        if (requisites.individual) {
-          bankDetails.individual.fullName = requisites.individual.fullName || '';
-          bankDetails.individual.account = requisites.individual.account || '';
-          bankDetails.individual.bik = requisites.individual.bik || '';
-        }
-        
-        // Данные ИП
-        if (requisites.entrepreneur) {
-          bankDetails.entrepreneur.fullName = requisites.entrepreneur.fullName || '';
-          bankDetails.entrepreneur.ogrnip = requisites.entrepreneur.ogrnip || '';
-          bankDetails.entrepreneur.address = requisites.entrepreneur.address || '';
-          bankDetails.entrepreneur.inn = requisites.entrepreneur.inn || '';
-          bankDetails.entrepreneur.account = requisites.entrepreneur.account || '';
-          bankDetails.entrepreneur.bik = requisites.entrepreneur.bik || '';
-          bankDetails.entrepreneur.correspondentAccount = requisites.entrepreneur.correspondentAccount || '';
-          bankDetails.entrepreneur.email = requisites.entrepreneur.email || '';
-        }
-        
-        // Определяем, какой тип данных заполнен
-        if (requisites.entrepreneur?.fullName || requisites.entrepreneur?.ogrnip) {
-          bankDetailsType.value = 'entrepreneur';
+      // Регион кабинета и реквизиты (getData)
+      const prof = payload.profile as Record<string, unknown> | undefined;
+      const region = (prof?.region as string) || 'Russia';
+      profileRegion.value = region;
+      formData.country = region;
+
+      const settings = payload.settings as Record<string, unknown> | undefined;
+      const requisites = settings?.requisites as Record<string, unknown> | undefined;
+      if (requisites) {
+        const rq = requisites as Record<string, unknown>;
+        if (region === 'Russia') {
+          const ind = rq.individual as Record<string, string> | undefined;
+          const ent = rq.entrepreneur as Record<string, string> | undefined;
+
+          if (ind) {
+            bankDetails.individual.fullName = ind.fullName || '';
+            bankDetails.individual.account = ind.account || '';
+            bankDetails.individual.bik = ind.bik || '';
+          }
+
+          if (ent) {
+            bankDetails.entrepreneur.fullName = ent.fullName || '';
+            bankDetails.entrepreneur.ogrnip = ent.ogrnip || '';
+            bankDetails.entrepreneur.address = ent.address || '';
+            bankDetails.entrepreneur.inn = ent.inn || '';
+            bankDetails.entrepreneur.account = ent.account || '';
+            bankDetails.entrepreneur.bik = ent.bik || '';
+            bankDetails.entrepreneur.correspondentAccount =
+              ent.correspondentAccount || '';
+            bankDetails.entrepreneur.email = ent.email || '';
+          }
+
+          if (ent?.fullName || ent?.ogrnip) {
+            bankDetailsType.value = 'entrepreneur';
+          } else {
+            bankDetailsType.value = 'individual';
+          }
         } else {
-          bankDetailsType.value = 'individual';
+          const intl = rq.international as
+            | {
+                binancePayId?: string;
+                cardNumber?: string;
+                cryptoWallet?: string;
+              }
+            | undefined;
+          if (intl) {
+            bankDetails.international.binancePayId = intl.binancePayId || '';
+            bankDetails.international.cardNumber = intl.cardNumber || '';
+            bankDetails.international.cryptoWallet = intl.cryptoWallet || '';
+          }
         }
+      }
+
+      const passportPayload = settings?.passport as
+        | SettingsPassportPayload
+        | undefined
+      if (passportPayload) {
+        applyPassportFromApi(passportPayload)
       }
     }
     
@@ -688,6 +943,42 @@ const refreshUserData = async () => {
     throw error;
   }
 };
+
+const submitInternationalBankDetails = async () => {
+  if (!validateInternationalBankDetails()) {
+    ElMessage.error('Исправьте ошибки в реквизитах')
+    return
+  }
+  isOperationLoading.value = true
+  try {
+    const response = await postUrlEncodedRequest(
+      '/ajax_vue/ajax/profile/updateNotRussia.php',
+      {
+        cart: bankDetails.international.binancePayId.trim(),
+        'rs-cart': bankDetails.international.cardNumber.trim(),
+        paypal: bankDetails.international.cryptoWallet.trim()
+      }
+    )
+    const raw = String(response.data ?? '')
+    if (raw.includes('Binance должен')) {
+      ElMessage.error(raw.trim())
+      return
+    }
+    if (raw.includes('успешно') || raw.includes('изменен')) {
+      ElMessage.success('Реквизиты сохранены успешно')
+      await refreshUserData()
+    } else if (raw.trim()) {
+      ElMessage.error(raw.trim())
+    } else {
+      ElMessage.error('Не удалось сохранить реквизиты')
+    }
+  } catch (error: unknown) {
+    console.error('Ошибка при сохранении реквизитов:', error)
+    ElMessage.error('Ошибка при сохранении реквизитов')
+  } finally {
+    isOperationLoading.value = false
+  }
+}
 
 // Функция для загрузки всех данных
 const loadAllData = async () => {
@@ -707,6 +998,19 @@ const loadAllData = async () => {
 onMounted(() => {
   loadAllData();
 });
+
+onUnmounted(() => {
+  clearReleaseHighlightTimers();
+});
+
+watch(
+  () => [loading.value, route.query.releaseBlocked] as const,
+  () => {
+    if (!loading.value && route.query.releaseBlocked === '1') {
+      void handleBlockedReleaseFromQuiz();
+    }
+  },
+);
 </script>
 
 <template>
@@ -861,7 +1165,15 @@ onMounted(() => {
               </div>
             </div>
           </div>
-          <div class="setting__passport">
+          <div
+            id="settings-passport"
+            class="setting__passport"
+            :class="{
+              setting__section_highlight: highlightPassportSection,
+              'setting__section_highlight--fade':
+                highlightPassportSection && highlightSectionFadeOut,
+            }"
+          >
             <h5 class="setting__passport_heading">данные паспорта</h5>
             <p class="setting__passport_desc">Введите данные для отображения в вашем договоре при выкладке релиза. Данные вашего паспорта скрыты для просмотра, но вы можете обновить их в любое время по кнопке «Изменить».</p>
             <div class="setting__passport_buttons">
@@ -874,20 +1186,16 @@ onMounted(() => {
               </button>
             </div>
           </div>
-          <div class="setting__password">
-            <h5 class="setting__password_heading">Смена пароля</h5>
-            <p class="setting__password_desc">Для изменения пароля мы отправим ссылку на вашу электронную почту.</p>
-            <div class="setting__password_buttons">
-              <button 
-                class="setting__password_button button__primary" 
-                @click="openPasswordModal"
-                :disabled="isOperationLoading"
-              >
-                <span>изменить пароль</span>
-              </button>
-            </div>
-          </div>
           
+          <div
+            id="settings-bank-requisites"
+            :class="{
+              setting__section_highlight: highlightBankSection,
+              'setting__section_highlight--fade':
+                highlightBankSection && highlightSectionFadeOut,
+            }"
+          >
+          <template v-if="isRussia">
           <!-- Банковские данные - Физическое лицо -->
           <div class="setting__details" v-if="bankDetailsType === 'individual'">
             <h5 class="setting__details_heading">Банковские данные (Физ. лицо)</h5>
@@ -1140,7 +1448,86 @@ onMounted(() => {
               </button>
             </div>
           </div>
+          </template>
 
+          <div
+            v-else
+            class="setting__details"
+          >
+            <h5 class="setting__details_heading">Реквизиты для выплат</h5>
+            <p class="setting__details_description">
+              Для стран вне РФ: укажите Binance ID / Pay ID, при необходимости — карту РФ и (или) адрес кошелька USDT в сети BEP-20. Достаточно заполнить хотя бы одно поле.
+            </p>
+            <div class="setting__details_flex">
+              <div class="form__groups">
+                <div v-if="errors.bankDetails.international?.general" class="error text_very" style="margin-bottom: 12px">
+                  {{ errors.bankDetails.international.general }}
+                </div>
+                <div class="form__group">
+                  <label for="intlBinance" class="form__label button">Binance ID / Pay ID</label>
+                  <el-input
+                    id="intlBinance"
+                    v-model="bankDetails.international.binancePayId"
+                    :class="{ 'error': errors.bankDetails.international?.binancePayId }"
+                    placeholder="XXXX-XXXX-XXXX-XXXX"
+                    :disabled="isOperationLoading"
+                    @blur="validateInternationalBankDetails"
+                    size="large"
+                  />
+                  <div v-if="errors.bankDetails.international?.binancePayId" class="error text_very">
+                    {{ errors.bankDetails.international.binancePayId }}
+                  </div>
+                </div>
+                <div class="form__group">
+                  <label for="intlCard" class="form__label button">Номер карты (РФ), опционально</label>
+                  <el-input
+                    id="intlCard"
+                    v-model="bankDetails.international.cardNumber"
+                    placeholder=""
+                    :disabled="isOperationLoading"
+                    @blur="validateInternationalBankDetails"
+                    size="large"
+                  />
+                </div>
+                <div class="form__group">
+                  <label for="intlUsdt" class="form__label button">USDT (BEP-20), опционально</label>
+                  <el-input
+                    id="intlUsdt"
+                    v-model="bankDetails.international.cryptoWallet"
+                    placeholder=""
+                    :disabled="isOperationLoading"
+                    @blur="validateInternationalBankDetails"
+                    size="large"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="setting__details_buttons">
+              <button
+                class="setting__details_button button__primary"
+                type="button"
+                @click="submitInternationalBankDetails"
+                :disabled="isOperationLoading"
+              >
+                <span v-if="!isOperationLoading">сохранить изменения</span>
+                <span v-else>Сохранение...</span>
+              </button>
+            </div>
+          </div>
+          </div>
+          <div class="setting__password">
+            <h5 class="setting__password_heading">Смена пароля</h5>
+            <p class="setting__password_desc">Для изменения пароля мы отправим ссылку на вашу электронную почту.</p>
+            <div class="setting__password_buttons">
+              <button 
+                class="setting__password_button button__primary" 
+                @click="openPasswordModal"
+                :disabled="isOperationLoading"
+              >
+                <span>изменить пароль</span>
+              </button>
+            </div>
+          </div>
           <div class="setting__delete">
             <h5 class="setting__delete_heading">удаление аккаунта</h5>
             <p class="setting__delete_desc">Если захочешь восстановить аккаунт, можешь написать нам в группу VK или Телеграмм.</p>
@@ -1193,6 +1580,19 @@ onMounted(() => {
                 <el-option label="Кыргызстан" value="Кыргызстан" />
                 <el-option label="Другое" value="Другое" />
               </el-select>
+            </div>
+
+            <div
+              v-if="passportForm.citizenship === 'Другое'"
+              class="form__group"
+            >
+              <label class="form__label button">Другое гражданство</label>
+              <el-input
+                v-model="passportForm.otherCitizenship"
+                placeholder="Укажите страну"
+                :disabled="isOperationLoading"
+                size="large"
+              />
             </div>
 
             <div class="form__group">
@@ -1592,6 +1992,16 @@ onMounted(() => {
   &_buttons {
     padding: 10px 0 0;
   }
+}
+
+.setting__section_highlight {
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px #c0392b;
+  transition: box-shadow 0.55s ease;
+}
+
+.setting__section_highlight.setting__section_highlight--fade {
+  box-shadow: 0 0 0 0 rgba(192, 57, 43, 0);
 }
 
 .setting__passport {

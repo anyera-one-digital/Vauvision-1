@@ -74,7 +74,7 @@
 
       <!-- Ссылка на Bandlink -->
       <div class="form__group">
-        <label for="bandlinkUrl" class="form__label button">ССЫЛКА НА ВАШ ПРЕДСТОЯЩИЙ РЕЛИЗ В BANDLINK</label>
+        <label for="bandlinkUrl" class="form__label button">ССЫЛКА НА ВАШ ПРЕДСТОЯЩИЙ РЕЛИЗ В BANDLINK (НЕОБЯЗАТЕЛЬНО)</label>
         <p class="form__hint text_small">Если у вас есть верифицированный профиль <a href="https://band.link/" target="_blanc">Band.link</a>, то зайдите туда, перейдите в раздел «Страницы» и нажмите «Создать Bandlink». Создайте страницу релиза, указав псевдоним и название будущего релиза. Далее нажмите «Превью страницы» и скопируйте получившуюся ссылку. Её и нужно вставить в поле слева. Если у вас нет профиля в <a href="https://band.link/" target="_blanc">Band.link</a>, пропустить это поле.</p>
         <el-input
           v-model="formData.bandlinkUrl"
@@ -98,7 +98,7 @@
           <el-input
             v-model="formData.promoCode"
             type="text"
-            placeholder="Введите промокод"
+            placeholder="Если есть, то введите. Если нет, то не вводите"
             :disabled="promoApplied || uploadingFiles || isGeneratingContract"
             @input="handlePromoInput"
             size="large"
@@ -124,7 +124,7 @@
         <label for="bonuses" class="form__label button">Бонусы</label>
         <ul class="form__hint_list">
           <li class="form__hint_item">
-            <p class="form__hint text_small">У вас доступно {{ userBonuses }} бонусов. 1 бонус = 1 {{ currencySymbol }}. Бонусами можно списать не более 50% от стоимости заказа.</p>
+            <p class="form__hint text_small">У вас на балансе {{ userBonuses }} бонусов. 1 бонус = 1 {{ currencySymbol }}. За один заказ можно списать не более 50% от суммы заказа после скидки по промокоду (если есть).</p>
           </li>
           <li class="form__hint_item">
             <p class="form__hint text_small">Новые бонусы рассчитываются от финальной стоимости с учётом скидки.</p>
@@ -144,7 +144,7 @@
             style="width: 200px;"
             :disabled="uploadingFiles || isGeneratingContract"
           />
-          <span class="form__bonus_hint">доступно: {{ userBonuses }}</span>
+          <span class="form__bonus_hint">к списанию по правилам: до {{ maxBonuses }} (на балансе {{ userBonuses }})</span>
         </div>
         <div v-if="errors.usedBonuses" class="error text_very">
           {{ errors.usedBonuses }}
@@ -355,6 +355,35 @@ const userBonuses = ref(0);
 // Минимальная сумма к оплате
 const MINIMUM_AMOUNT = 1;
 
+// Сумма заказа после промокода, до списания бонусов
+const orderTotalAfterPromo = computed(() => {
+  let total = originalTotalAmount.value;
+  if (promoDiscount.value > 0) {
+    total = Math.floor((total * (100 - promoDiscount.value)) / 100);
+  }
+  return total;
+});
+
+// Не более 50% от суммы после скидки, не выше баланса, с учётом минимального платежа
+const maxBonuses = computed(() => {
+  const order = orderTotalAfterPromo.value;
+  const maxByHalfOrder = Math.floor(order * 0.5);
+  const maxByMinPayment = Math.max(0, order - MINIMUM_AMOUNT);
+  return Math.min(userBonuses.value, maxByHalfOrder, maxByMinPayment);
+});
+
+// Финальная сумма с учётом скидки и бонусов
+const finalAmount = computed(() => {
+  const total = orderTotalAfterPromo.value;
+  const used = formData.usedBonuses || 0;
+  return Math.max(MINIMUM_AMOUNT, total - used);
+});
+
+// Есть ли скидка (для отображения перечеркнутой цены)
+const hasDiscount = computed(() => {
+  return promoDiscount.value > 0 || formData.usedBonuses > 0;
+});
+
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
@@ -479,7 +508,15 @@ const createSafeStateCopy = () => {
       images: Array.isArray(contractData.value.images) ? [...contractData.value.images] : []
     };
   }
-  
+
+  /** После промо, до списания бонусов — как orderTotalAfterPromo / отправка на бэкенд */
+  const snapOrderAfterPromo = orderTotalAfterPromo.value;
+  const usedBonusesSnap = Number(formData.usedBonuses || 0);
+  const snapFinalPayable = Math.max(
+    MINIMUM_AMOUNT,
+    snapOrderAfterPromo - usedBonusesSnap
+  );
+
   return {
     id: STORAGE_KEY,
     formData: safeFormData,
@@ -487,6 +524,10 @@ const createSafeStateCopy = () => {
     promoDiscount: Number(promoDiscount.value || 0),
     contractData: safeContractData,
     contractLoadedFromBackend: contractLoadedFromBackend.value,
+    /** Для order.php: sumOrder до вычета refBonus (после промо) */
+    orderTotalAfterPromo: snapOrderAfterPromo,
+    /** Итог к оплате после бонусов — как в UI / newDock sumOrder */
+    finalPayableAmount: snapFinalPayable,
     timestamp: Date.now()
   };
 };
@@ -545,30 +586,6 @@ const loadStateFromDB = async () => {
     null
   );
 };
-
-// Максимальное количество бонусов, которое можно использовать
-const maxBonuses = computed(() => {
-  const maxDeductible = Math.max(0, originalTotalAmount.value - MINIMUM_AMOUNT);
-  return Math.min(userBonuses.value, maxDeductible);
-});
-
-// Финальная сумма с учетом скидки и бонусов
-const finalAmount = computed(() => {
-  let total = originalTotalAmount.value;
-  
-  if (promoDiscount.value > 0) {
-    total = Math.floor(total * (100 - promoDiscount.value) / 100);
-  }
-  
-  const used = formData.usedBonuses || 0;
-  
-  return Math.max(MINIMUM_AMOUNT, total - used);
-});
-
-// Есть ли скидка (для отображения перечеркнутой цены)
-const hasDiscount = computed(() => {
-  return promoDiscount.value > 0 || formData.usedBonuses > 0;
-});
 
 // Загрузка данных из API
 const loadBasketData = async () => {
@@ -728,7 +745,7 @@ const handleBonusesChange = (value: number | undefined) => {
   
   if (value > maxBonuses.value) {
     formData.usedBonuses = maxBonuses.value;
-    ElMessage.warning(`Максимально можно использовать ${maxBonuses.value} бонусов, чтобы сумма была не менее ${MINIMUM_AMOUNT} ${currencySymbol.value}`);
+    ElMessage.warning(`Для этого заказа можно списать не более ${maxBonuses.value} бонусов`);
   } else if (value < 0) {
     formData.usedBonuses = 0;
   } else {
@@ -787,8 +804,8 @@ const validateField = (fieldName: keyof typeof errors): boolean => {
         errorMessage = 'Количество бонусов не может быть отрицательным';
       } else if (formData.usedBonuses > userBonuses.value) {
         errorMessage = `У вас доступно только ${userBonuses.value} бонусов`;
-      } else if (formData.usedBonuses > originalTotalAmount.value - MINIMUM_AMOUNT) {
-        errorMessage = `Нельзя использовать больше ${originalTotalAmount.value - MINIMUM_AMOUNT} бонусов, чтобы сумма была не менее ${MINIMUM_AMOUNT} ${currencySymbol.value}`;
+      } else if (formData.usedBonuses > maxBonuses.value) {
+        errorMessage = `Нельзя списать больше ${maxBonuses.value} бонусов для этого заказа`;
       }
       break;
       
@@ -873,7 +890,7 @@ const isReadyForNextStep = computed(() => {
     formData.platforms.length > 0 &&
     formData.usedBonuses >= 0 &&
     formData.usedBonuses <= userBonuses.value &&
-    formData.usedBonuses <= originalTotalAmount.value - MINIMUM_AMOUNT &&
+    formData.usedBonuses <= maxBonuses.value &&
     formData.confirmNoRightsViolation;
   
   let otherPlatformValid = true;
@@ -1409,7 +1426,7 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
             formDataToSend.append(`artist-album[${track.product_id}]`, cleanField(track.performerName || ''));
             formDataToSend.append(`autor-music-album[${track.product_id}]`, cleanField(track.musicAuthor || ''));
             formDataToSend.append(`autor-words-album[${track.product_id}]`, cleanField(track.textAuthor || ''));
-            formDataToSend.append(`autor-files-album[${track.product_id}]`, cleanField(track.performerName || ''));
+            formDataToSend.append(`autor-files-album[${track.product_id}]`, cleanField(track.trackName || ''));
             console.log(`    Трек ${trackIndex + 1}: ID=${track.product_id}, Name=${track.audioFileName}`);
           }
         });
@@ -1423,15 +1440,23 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     console.log('📝 Добавляем данные Quiz3:');
     console.log('  - alias (псевдоним):', f.performerName);
     console.log('  - name-relize (название):', f.releaseName);
+
+    const plat = Array.isArray(f.platforms) ? f.platforms[0] : f.platforms;
+    const otherPl = String(f.otherPlatform || '');
+    const isOtherPlatform = plat === 'other';
+    const sk = isOtherPlatform ? '4' : '1';
+    const ok = isOtherPlatform ? otherPl : '';
+
+    const matQuiz3 = f.hasProfanity === 'yes' ? '12' : '13';
     
     formDataToSend.append('alias', cleanField(f.performerName || ''));
     formDataToSend.append('name-relize', cleanField(f.releaseName || ''));
-    formDataToSend.append('kuda_reliz1', '1');
-    formDataToSend.append('kuda-reliz', '1');
-    formDataToSend.append('others-kuda', f.otherPlatform || '');
+    formDataToSend.append('kuda-reliz1', sk);
+    formDataToSend.append('kuda-reliz', sk);
+    formDataToSend.append('others-kuda', ok);
     formDataToSend.append('calendar-reliz', f.releaseDate || '');
-    formDataToSend.append('mat1', f.hasProfanity === 'yes' ? '12' : '13');
-    formDataToSend.append('mat', f.hasProfanity === 'yes' ? '12' : '13');
+    formDataToSend.append('mat1', matQuiz3);
+    formDataToSend.append('mat', matQuiz3);
     formDataToSend.append('others-mat', f.profanityTracks || '');
     formDataToSend.append('mat1ai', '13');
     formDataToSend.append('matai', '13');
@@ -1443,13 +1468,13 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     // Эти поля, вероятно, для альбомов, но оставим их здесь, т.к. бэкенд может их игнорировать, если нет альбомов
     formDataToSend.append('alias-album', cleanField(f.performerName || ''));
     formDataToSend.append('name-relize-album', cleanField(f.releaseName || 'Альбом'));
-    formDataToSend.append('kuda-reliz-album1', '');
-    formDataToSend.append('kuda-reliz-album', '1');
-    formDataToSend.append('others-kuda-album', '');
-    formDataToSend.append('calendar-reliz-album', '');
-    formDataToSend.append('mat-album1', '13');
-    formDataToSend.append('mat-album', '13');
-    formDataToSend.append('others-mat-album', '');
+    formDataToSend.append('kuda-reliz-album1', sk);
+    formDataToSend.append('kuda-reliz-album', sk);
+    formDataToSend.append('others-kuda-album', ok);
+    formDataToSend.append('calendar-reliz-album', f.releaseDate || '');
+    formDataToSend.append('mat-album1', matQuiz3);
+    formDataToSend.append('mat-album', matQuiz3);
+    formDataToSend.append('others-mat-album', f.profanityTracks || '');
     formDataToSend.append('mat-album1ai', '13');
     formDataToSend.append('mat-albumai', '13');
     formDataToSend.append('others-matai-album', '');
@@ -1464,17 +1489,25 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     
     formDataToSend.append('citysenship1', '');
     formDataToSend.append('citysenship', u.userType === 'individual' ? 'Физическое лицо' : 'Индивидуальный предприниматель');
-    formDataToSend.append('select__fizurlico', '');
+    formDataToSend.append('select__fizurlico', u.userType === 'entrepreneur' ? 'urlico' : '');
     formDataToSend.append('others', '');
-    formDataToSend.append('yur_arg_org', cleanField(u.legalAddress || ''));
+    const le = cleanField(u.legalAddress || '');
+    const bi = u.bankInn || '';
+    const cr = u.correspondentAccount || '';
+    const ya = cleanField(u.bankLegalAddress || '');
+    formDataToSend.append('yur-arg-org', le);
+    formDataToSend.append('yur_arg_org', le);
     formDataToSend.append('inn', u.inn || '');
     formDataToSend.append('ogrn', u.ogrn || '');
     formDataToSend.append('rasy', u.accountNumber || '');
     formDataToSend.append('bank', cleanField(u.bankName || ''));
-    formDataToSend.append('inn_bank', u.bankInn || '');
+    formDataToSend.append('inn-bank', bi);
+    formDataToSend.append('inn_bank', bi);
     formDataToSend.append('bik', u.bankBik || '');
-    formDataToSend.append('kor_s', u.correspondentAccount || '');
-    formDataToSend.append('yur_adr_bank', cleanField(u.bankLegalAddress || ''));
+    formDataToSend.append('kor-s', cr);
+    formDataToSend.append('kor_s', cr);
+    formDataToSend.append('yur-adr-bank', ya);
+    formDataToSend.append('yur_adr_bank', ya);
     
     const formatCitizenship = (citizenship?: string, other?: string): string => {
       if (!citizenship) return '';
@@ -1521,6 +1554,8 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     formDataToSend.append('others-narc', g.drugsTracks || '');
     formDataToSend.append('apple', g.appleMusicLinks || '');
     formDataToSend.append('spotify', g.spotifyLinks || '');
+    formDataToSend.append('link-apple', g.appleMusicLinks || '');
+    formDataToSend.append('link-spotify', g.spotifyLinks || '');
     formDataToSend.append('link-vk', g.vkLinks || '');
     formDataToSend.append('link-yandex', g.yandexMusicLinks || '');
     formDataToSend.append('socialartist', g.socialLinks || '');
@@ -1534,11 +1569,18 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
   const otkudaString = formData.platforms.join(', ');
   formDataToSend.append('otkuda-uznali', otkudaString);
   formDataToSend.append('others-otkuda', formData.otherPlatform || '');
+  formDataToSend.append('instrumentals', '');
   formDataToSend.append('comments', formData.additionalComments || '');
   formDataToSend.append('plan', formData.promoPlan || '');
   formDataToSend.append('link-bandlink', formData.bandlinkUrl || '');
   formDataToSend.append('promocode', formData.promoCode || '');
-  formDataToSend.append('promosum', '');
+  let promosumNewdock = '';
+  if (promoDiscount.value > 0 && promoDiscount.value < 100) {
+    const after = Math.floor(orderTotalAfterPromo.value || 0);
+    const approxBefore = Math.round((after * 100) / (100 - promoDiscount.value));
+    promosumNewdock = String(Math.max(0, approxBefore - after));
+  }
+  formDataToSend.append('promosum', promosumNewdock);
   formDataToSend.append('sumOrder', String(finalAmount.value || 0));
   formDataToSend.append('policy', formData.confirmNoRightsViolation ? 'on' : 'off');
   
@@ -1685,6 +1727,14 @@ watch(() => formData.platforms, async (newPlatforms) => {
   if (dataLoaded.value) debouncedSave();
 }, { deep: true });
 
+watch([originalTotalAmount, promoDiscount], () => {
+  if (!dataLoaded.value) return;
+  if (formData.usedBonuses > maxBonuses.value) {
+    formData.usedBonuses = maxBonuses.value;
+    validateField('usedBonuses');
+  }
+});
+
 watch(() => formData.usedBonuses, (newValue, oldValue) => {
   if (dataLoaded.value && newValue !== oldValue) {
     if (newValue > maxBonuses.value) {
@@ -1729,7 +1779,7 @@ onUnmounted(() => {
     clearTimeout(promoDebounceTimer);
   }
   window.removeEventListener('beforeunload', handleBeforeUnload);
-  window.removeEventListener('visibilitychange', handleVisibilityChange);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
 </script>
 

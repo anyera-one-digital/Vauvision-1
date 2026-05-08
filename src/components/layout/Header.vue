@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { sendRequest } from '@/utils/api';
+import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
 import LabelArtistsMenuBlock from "@/components/layout/LabelArtistsMenuBlock.vue";
 import {
   syncLabelMenuFromGetDataResponse,
@@ -30,6 +30,7 @@ const userData = ref({
   name: '',
   email: '',
   balance: 0,
+  currencySymbol: '₽',
   avatar: ''
 });
 
@@ -52,9 +53,8 @@ const fetchUserData = async (prefetched?: Record<string, unknown>) => {
   try {
     const response = prefetched
       ? { data: prefetched }
-      : await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Header данные из API:', response.data);
-    
+      : await fetchSharedCabinetGetData();
+
     if (response.data) {
       // Данные пользователя
       if (response.data.user) {
@@ -67,9 +67,17 @@ const fetchUserData = async (prefetched?: Record<string, unknown>) => {
         }
       }
       
-      // Баланс
+      // Баланс и валюта (getData → profile)
       if (response.data.profile) {
-        userData.value.balance = response.data.profile.balance || 0;
+        const prof = response.data.profile as {
+          balance?: number;
+          region?: string;
+          currencySymbol?: string;
+        };
+        userData.value.balance = prof.balance || 0;
+        userData.value.currencySymbol =
+          (prof.currencySymbol as string) ||
+          (prof.region === 'Russia' ? '₽' : '$');
       }
       
       // Реферальная ссылка
@@ -219,7 +227,7 @@ const handleAvatarError = (event: Event) => {
               :title="'Счёт обновляется после скачивания отчёта. Пожалуйста, скачайте отчёт, после этого сумма на балансе обновится'"
             >
               <PaySVG />
-              <span>Баланс: {{ formattedBalance(userData.balance) }} руб.</span>
+              <span>Баланс: {{ formattedBalance(userData.balance) }} {{ userData.currencySymbol }}</span>
             </div>
             <button 
               v-if="referralLink"
@@ -403,7 +411,7 @@ const handleAvatarError = (event: Event) => {
               :title="'Счёт обновляется после скачивания отчёта. Пожалуйста, скачайте отчёт, после этого сумма на балансе обновится'"
             >
               <PaySVG />
-              <span>Баланс: {{ formattedBalance(userData.balance) }} руб.</span>
+              <span>Баланс: {{ formattedBalance(userData.balance) }} {{ userData.currencySymbol }}</span>
             </div>
             <button 
               v-if="referralLink"

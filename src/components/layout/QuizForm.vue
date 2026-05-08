@@ -10,6 +10,7 @@ import Quiz5 from "@/components/layout/Quiz/Quiz5.vue";
 import Quiz6 from "@/components/layout/Quiz/Quiz6.vue";
 import Quiz7 from "@/components/layout/Quiz/Quiz7.vue";
 import Quiz8 from "@/components/layout/Quiz/Quiz8.vue";
+import PaymentStatus from "@/components/layout/Quiz/PaymentStatus.vue";
 
 const emit = defineEmits<{
   "go-back": [];
@@ -19,8 +20,10 @@ const emit = defineEmits<{
 const props = withDefaults(
   defineProps<{
     currentStep?: number;
+    /** Возврат с оплаты: показать PaymentStatus вместо Quiz8 на шаге 8 */
+    paymentReturnStatus?: "success" | "error" | null;
   }>(),
-  { currentStep: 1 },
+  { currentStep: 1, paymentReturnStatus: null },
 );
 
 // Глобальное состояние для хранения данных между шагами
@@ -58,6 +61,33 @@ interface AlbumData {
 }
 
 const currentStep = ref(props.currentStep);
+
+const paymentRetryUsdt = ref("");
+const paymentRetryCard = ref("");
+
+const QUIZ_LAST_PAYMENT_LINKS_KEY = "quiz_last_payment_links";
+
+const loadPaymentRetryLinks = () => {
+  paymentRetryUsdt.value = "";
+  paymentRetryCard.value = "";
+  try {
+    const raw = sessionStorage.getItem(QUIZ_LAST_PAYMENT_LINKS_KEY);
+    if (!raw) return;
+    const j = JSON.parse(raw) as { usdt?: string; card?: string };
+    if (typeof j.usdt === "string") paymentRetryUsdt.value = j.usdt;
+    if (typeof j.card === "string") paymentRetryCard.value = j.card;
+  } catch {
+    /* ignore */
+  }
+};
+
+watch(
+  () => [props.currentStep, props.paymentReturnStatus] as const,
+  ([step, st]) => {
+    if (step === 8 && (st === "success" || st === "error")) loadPaymentRetryLinks();
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.currentStep,
@@ -256,6 +286,12 @@ const fullReset = async () => {
   // Сбрасываем шаг на 1
   currentStep.value = 1;
 
+  try {
+    sessionStorage.removeItem(QUIZ_LAST_PAYMENT_LINKS_KEY);
+  } catch {
+    /* ignore */
+  }
+
   // Сбрасываем глобальное состояние
   quizState.singleCount = 0;
   quizState.albumCount = 0;
@@ -343,9 +379,17 @@ defineExpose({
       @go-next="goToStep(8)"
     />
 
-    <!-- Шаг 8 -->
+    <!-- Шаг 8: возврат с оплаты -->
+    <PaymentStatus
+      v-if="currentStep === 8 && (paymentReturnStatus === 'success' || paymentReturnStatus === 'error')"
+      :status="paymentReturnStatus!"
+      :usdt-payment-url="paymentRetryUsdt || undefined"
+      :card-payment-url="paymentRetryCard || undefined"
+    />
+
+    <!-- Шаг 8: оформление / выбор оплаты в ЛК -->
     <Quiz8
-      v-if="currentStep === 8"
+      v-if="currentStep === 8 && paymentReturnStatus !== 'success' && paymentReturnStatus !== 'error'"
       @go-back="handleGoBack"
       @finish="handleFinish"
     />

@@ -66,7 +66,28 @@ const router = createRouter({
         {
           path: 'release',
           name: 'release',
-          component: () => import('@/views/Quiz.vue')
+          component: () => import('@/views/Quiz.vue'),
+          beforeEnter: async (to) => {
+            const payment = to.query.payment;
+            const pv = Array.isArray(payment) ? payment[0] : payment;
+            if (pv === 'success' || pv === 'error') return true;
+            try {
+              const { fetchReleaseProfileReadiness } = await import(
+                '@/utils/releaseProfileReadiness'
+              );
+              const result = await fetchReleaseProfileReadiness();
+              if (result.ok) return true;
+              return Tr.i18nRoute({
+                name: 'setting',
+                query: {
+                  releaseBlocked: '1',
+                  focus: result.focus,
+                },
+              });
+            } catch {
+              return true;
+            }
+          },
         },
         {
           path: 'setting',

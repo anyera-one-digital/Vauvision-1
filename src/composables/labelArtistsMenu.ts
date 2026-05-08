@@ -1,6 +1,7 @@
 import { ref, computed } from "vue";
 import router from "@/router";
 import { postUrlEncodedRequest, sendRequest } from "@/utils/api";
+import { fetchSharedCabinetGetData } from "@/utils/fetchSharedCabinetGetData";
 import Tr from "@/i18n/translation";
 
 export interface LabelArtist {
@@ -13,6 +14,13 @@ const AUTH_LABEL_USER_URL = "/ajax_vue/ajax/profile/authLableUser.php";
 const LABEL_RETURN_USER_SS = "vauvision_label_return_user_id";
 const LABEL_GROUP_ROSTER_SS = "vauvision_label_group_roster";
 const LABEL_CONTEXT_SS = "vauvision_label_context_group";
+
+/** Ключи sessionStorage переключателя лейбла — сохранять при полном сбросе квиза. */
+export const SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET = [
+  LABEL_RETURN_USER_SS,
+  LABEL_GROUP_ROSTER_SS,
+  LABEL_CONTEXT_SS,
+] as const;
 
 interface LabelContextSnapshot {
   groupId: string | number;
@@ -389,11 +397,7 @@ export async function openArtistCabinet(id: string) {
   artistCabinetSwitching.value = true;
   try {
     await postUrlEncodedRequest(AUTH_LABEL_USER_URL, { ID: id });
-    const response = await sendRequest(
-      "get",
-      "/ajax_vue/ajax/getData.php",
-      {}
-    );
+    const response = await fetchSharedCabinetGetData();
     const data = response?.data as LabelShellGetDataPayload | undefined;
     if (!data) {
       throw new Error("empty getData after auth");
@@ -418,6 +422,91 @@ export function openAddArtistModal() {
 export function closeAddArtistModal() {
   addArtistModalOpen.value = false;
   addArtistError.value = "";
+}
+
+/** Поля наследования с «головного» лейбла для addLableUser.php (бэкенд может игнорировать неизвестные ключи). */
+async function buildNewArtistInheritFieldsFromLabelProfile(): Promise<
+  Record<string, string>
+> {
+  try {
+    const res = await fetchSharedCabinetGetData();
+    const data = res.data as Record<string, unknown> | undefined;
+    const out: Record<string, string> = {};
+    if (!data) return out;
+    const user = data.user as Record<string, unknown> | undefined;
+    const profile = data.profile as Record<string, unknown> | undefined;
+    const settings = data.settings as Record<string, unknown> | undefined;
+    const email = String(user?.email ?? "").trim();
+    const region = String(profile?.region ?? "").trim();
+    if (email) out.INHERIT_EMAIL = email;
+    if (region) out.INHERIT_REGION = region;
+    const req = settings?.requisites as
+      | {
+          individual?: {
+            fullName?: string;
+            account?: string;
+            bik?: string;
+          };
+          entrepreneur?: {
+            fullName?: string;
+            ogrnip?: string;
+            address?: string;
+            inn?: string;
+            account?: string;
+            bik?: string;
+            correspondentAccount?: string;
+            email?: string;
+          };
+          international?: {
+            binancePayId?: string;
+            cardNumber?: string;
+            cryptoWallet?: string;
+          };
+        }
+      | undefined;
+    if (!req) return out;
+    if (req.international) {
+      out.INHERIT_REK_TYPE = "intl";
+      const i = req.international;
+      const b = String(i?.binancePayId ?? "").trim();
+      const c = String(i?.cardNumber ?? "").trim();
+      const w = String(i?.cryptoWallet ?? "").trim();
+      if (b) out.INHERIT_CART = b;
+      if (c) out.INHERIT_CART_NAME = c;
+      if (w) out.INHERIT_PAYPAL = w;
+      return out;
+    }
+    const ent = req.entrepreneur;
+    const useIp =
+      String(ent?.fullName ?? "").trim() || String(ent?.ogrnip ?? "").trim();
+    if (useIp && ent) {
+      out.INHERIT_REK_TYPE = "ip";
+      const put = (k: string, v: unknown) => {
+        const s = String(v ?? "").trim();
+        if (s) out[k] = s;
+      };
+      put("INHERIT_IP_SP", ent.fullName);
+      put("INHERIT_IP_OGRNIP", ent.ogrnip);
+      put("INHERIT_IP_ADDR", ent.address);
+      put("INHERIT_IP_INN", ent.inn);
+      put("INHERIT_IP_RS", ent.account);
+      put("INHERIT_IP_BIK", ent.bik);
+      put("INHERIT_IP_KS", ent.correspondentAccount);
+      put("INHERIT_IP_EMAIL", ent.email);
+    } else if (req.individual) {
+      out.INHERIT_REK_TYPE = "fl";
+      const ind = req.individual;
+      const fn = String(ind.fullName ?? "").trim();
+      const acc = String(ind.account ?? "").trim();
+      const bik = String(ind.bik ?? "").trim();
+      if (fn) out.INHERIT_FL_SP = fn;
+      if (acc) out.INHERIT_FL_RS = acc;
+      if (bik) out.INHERIT_FL_BIK = bik;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 export async function submitNewArtist() {
@@ -451,10 +540,12 @@ export async function submitNewArtist() {
 
   addArtistSubmitting.value = true;
   try {
+    const inherit = await buildNewArtistInheritFieldsFromLabelProfile();
     const response = await postUrlEncodedRequest(ADD_LABEL_USER_URL, {
       LABLE: lable,
       nameLable,
       NEW_USER_LABLE: artistName,
+      ...inherit,
     });
 
     const parsed = parseAddLableUserPhpResponse(response.data);

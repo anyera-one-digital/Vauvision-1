@@ -27,7 +27,7 @@
               <div class="personal__balance_top_info">
                 <h4 class="personal__balance_heading">
                   <span class="personal__balance_description text_one">Баланс</span>
-                  {{ profileData.balance.toLocaleString() }} ₽
+                  {{ profileData.balance.toLocaleString() }} {{ profileData.currencySymbol }}
                 </h4>
                 <p class="personal__balance_desc text_small">Баланс обновляется после скачивания отчёта. Пожалуйста, скачайте отчёт, после этого сумма на балансе обновится</p>
               </div>
@@ -65,7 +65,7 @@
                   <span class="personal__balance_description text_one">Бонусы партнера</span>
                   {{ profileData.bonus.toLocaleString() }}
                 </h4>
-                <p class="personal__balance_desc text_small">Бонусы начисляются за каждую покупку, а также за рекомендации по Партнёрской программе!<br>Бонусами можно оплачивать до 50% покупок.<br> 1 бонус = 1 рубль.</p>
+                <p class="personal__balance_desc text_small">Бонусы начисляются за каждую покупку, а также за рекомендации по Партнёрской программе!<br>Бонусами можно оплачивать до 50% покупок.<br>{{ bonusBalanceHintLine }}</p>
               </div>
             </div>
             <button 
@@ -131,7 +131,7 @@
                         class="personal__releases_code text_small"
                         @click="copyToClipboard(release.upcCode, 'UPC код')"
                       >
-                        <span>UPC: {{ release.upcCode }}</span>
+                        <span>UPC код: {{ release.upcCode }}</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
                         </svg>
@@ -141,7 +141,7 @@
                         class="personal__releases_code personal__releases_code_action text_small"
                         @click="handleUpcClick(release)"
                       >
-                        <span>UPC: {{ getUpcDisplayText(release) }}</span>
+                        <span>UPC код: {{ getUpcDisplayText(release) }}</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                         </svg>
@@ -159,30 +159,42 @@
                           <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
                         </svg>
                       </div>
-                      <RouterLink 
+                      <div
                         v-else
-                        :to="Tr.i18nRoute({ name: 'support' })"
                         class="personal__releases_code personal__releases_code_action text_small"
-                        target="_blank"
+                        role="button"
+                        tabindex="0"
+                        @click="handleReleaseLinkPlaceholderClick(release)"
+                        @keydown.enter.prevent="handleReleaseLinkPlaceholderClick(release)"
                       >
-                        <!-- <LinkSVG/> -->
-                        <span>Ссылка: уточнить в поддержке</span>
+                        <span>Ссылка: {{ getReleaseLinkPlaceholderLabel(release) }}</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                         </svg>
-                      </RouterLink>
+                      </div>
                       <!-- ISRC код для релиза (если нет треков) -->
                       <RouterLink 
-                        v-if="!release.tracks || release.tracks.length === 0"
+                        v-if="(!release.tracks || release.tracks.length === 0) && !isReleaseDayReached(release)"
                         :to="Tr.i18nRoute({ name: 'support' })"
                         class="personal__releases_code personal__releases_code_action text_small"
-                        target="_blank"
                       >
                         <span>ISRC: уточнить в поддержке</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                         </svg>
                       </RouterLink>
+                      <a
+                        v-else-if="(!release.tracks || release.tracks.length === 0)"
+                        href="https://musicfetch.io/isrc-finder"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="personal__releases_code personal__releases_code_action text_small"
+                      >
+                        <span>ISRC: узнать</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
+                        </svg>
+                      </a>
                     </div>
 
                     <!-- Блок с треками релиза -->
@@ -203,14 +215,23 @@
                                   ISRC: {{ track.isrc }}
                                 </span>
                                 <RouterLink 
-                                  v-else
+                                  v-else-if="!isReleaseDayReached(release)"
                                   :to="Tr.i18nRoute({ name: 'support' })"
                                   class="personal__tracks_isrc_link text_very"
-                                  target="_blank"
                                 >
-                                  <LinkSVG/>
+                                  <LinkSVG v-if="!track.fromTrackProperty" class="personal__tracks_link_svg" />
                                   <span>ISRC: уточнить в поддержке</span>
                                 </RouterLink>
+                                <a
+                                  v-else
+                                  href="https://musicfetch.io/isrc-finder"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  class="personal__tracks_isrc_link text_very"
+                                >
+                                  <LinkSVG v-if="!track.fromTrackProperty" class="personal__tracks_link_svg" />
+                                  <span>ISRC: узнать</span>
+                                </a>
                               </div>
                           </div>
                         </li>
@@ -576,7 +597,16 @@
       <div class="popup__body">
         <div class="popup__empty">
           <p>На данный момент нет доступных отчётов</p>
-          <p class="popup__empty_hint">Попробуйте позже или обратитесь в поддержку</p>
+          <p class="popup__empty_hint">Отчёты приходят раз в квартал после 25 числа:</p>
+          <p class="popup__empty_hint">
+            <ul class="popup__empty_list">
+              <li> В мае приходит отчёт за Q1 (первый квартал: дек-янв-фев)</li>
+              <li> В августе приходит отчёт за Q2 (второй квартал: мар-апр-май)</li>
+              <li> В ноябре приходит отчёт за Q3 (третий квартал: июн-июл-авг)</li>
+              <li> В феврале приходит отчёт за Q4 (четвёртый квартал: сен-окт-ноя)</li>
+            </ul> 
+          </p>
+          <p class="popup__empty_hint">Пожалуйста, попробуйте позже или обратитесь в нашу поддержку.</p>
         </div>
         <div class="popup__actions">
           <button 
@@ -647,16 +677,16 @@
       <div class="popup__body">
         <div class="popup__info">
           <p class="popup__balance-info">
-            Сумма к выплате: <strong>{{ profileData.balance.toLocaleString() }} ₽</strong>
+            Сумма к выплате: <strong>{{ profileData.balance.toLocaleString() }} {{ profileData.currencySymbol }}</strong>
           </p>
           <!-- <p class="popup__min-amount">
-            Минимальная сумма: <strong>{{ minPayoutAmount }} ₽</strong>
+            Минимальная сумма: <strong>{{ minPayoutAmount }} {{ profileData.currencySymbol }}</strong>
           </p> -->
         </div>
         
         <div class="popup__form-group">
           <p class="popup__info-message">
-            Будет запрошена выплата на сумму {{ profileData.balance.toLocaleString() }} ₽
+            Будет запрошена выплата на сумму {{ profileData.balance.toLocaleString() }} {{ profileData.currencySymbol }}
           </p>
           <p v-if="actError" class="popup__error-message">{{ actError }}</p>
         </div>
@@ -797,10 +827,11 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
-import { useRoute } from "vue-router";
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from 'element-plus';
 import { sendRequest } from '@/utils/api';
+import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
 import Header from "@/components/layout/Header.vue";
 // import Footer from "@/components/layout/Footer.vue";
 import Menu from "@/components/layout/Menu.vue";
@@ -871,6 +902,8 @@ interface Track {
   is_explicit?: boolean;
   // Добавляем поле для отслеживания состояния
   isrcStatus?: 'loading' | 'error' | 'success';
+  /** Трек из свойства Bitrix TRACK (без JSON Zvonko): без иконки у строки ISRC */
+  fromTrackProperty?: boolean;
 }
 
 interface Release {
@@ -891,8 +924,6 @@ interface Release {
   propertyLinkValue?: string | null;
   propertyDogovorStatusValue?: string | null;
   tracks?: Track[];
-  // Новые поля
-  dataFromZvonko?: boolean; // Флаг, что данные уже загружены с Zvonko
 }
 
 interface Report {
@@ -951,8 +982,22 @@ interface ActResponse {
 const profileData = ref({
   balance: 0,
   bonus: 0,
-  region: 'Russia'
+  region: 'Russia',
+  currency: 'RUB' as 'RUB' | 'USD',
+  currencySymbol: '₽'
 });
+
+const bonusBalanceHintLine = computed(() =>
+  profileData.value.region === 'Russia'
+    ? '1 бонус = 1 рубль.'
+    : '1 бонус = 1 доллар (USD).'
+);
+
+function transactionCurrencySuffix(explicit?: string): string {
+  const t = (explicit ?? '').toString().trim();
+  if (t) return t;
+  return profileData.value.currencySymbol;
+}
 const userName = ref<string>('');
 /** Заголовок ЛК: псевдоним из ростера лейбла / логин getData, иначе имя как раньше */
 const personalHeadDisplayName = computed(() => {
@@ -962,6 +1007,7 @@ const personalHeadDisplayName = computed(() => {
   return n || "Пользователь";
 });
 const route = useRoute();
+const router = useRouter();
 const labelArtistsFromProfile = ref<LabelArtistRow[]>([]);
 const viewingArtistBanner = computed(() => {
   const id = route.query.artist;
@@ -1008,7 +1054,7 @@ const loadingYear = ref<string | null>(null); // Состояние загруз
 
 const releasesPagination = ref({
   currentPage: 1,
-  perPage: 4,
+  perPage: 6,
   total: "0"
 });
 
@@ -1024,7 +1070,7 @@ const transactionsPagination = ref({
   total: "0"
 });
 
-const releasesPerPage = ref<number>(4);
+const releasesPerPage = ref<number>(6);
 const currentReleasesPage = ref<number>(1);
 const totalReleasesItems = computed(() => parseInt(releasesPagination.value.total) || 0);
 
@@ -1036,8 +1082,10 @@ const transactionsPerPage = ref<number>(4);
 const currentTransactionsPage = ref<number>(1);
 const totalTransactionsItems = computed(() => parseInt(transactionsPagination.value.total) || 0);
 
+/** Страницы релизов по total и perPage из ответа getData (на бэке 6), а не по устаревшему локальному ref. */
 const totalReleasesPages = computed(() => {
-  return Math.ceil(totalReleasesItems.value / releasesPerPage.value);
+  const per = releasesPagination.value.perPage || releasesPerPage.value || 1;
+  return Math.max(1, Math.ceil(totalReleasesItems.value / per));
 });
 
 const paginatedReleases = computed(() => {
@@ -1045,11 +1093,13 @@ const paginatedReleases = computed(() => {
 });
 
 const showReleasesPagination = computed(() => {
-  return totalReleasesItems.value > releasesPerPage.value;
+  const per = releasesPagination.value.perPage || releasesPerPage.value || 1;
+  return totalReleasesItems.value > per;
 });
 
 const totalReportsPages = computed(() => {
-  return Math.ceil(totalReportsItems.value / reportsPerPage.value);
+  const per = reportsPagination.value.perPage || reportsPerPage.value || 1;
+  return Math.max(1, Math.ceil(totalReportsItems.value / per));
 });
 
 const paginatedReports = computed(() => {
@@ -1057,11 +1107,14 @@ const paginatedReports = computed(() => {
 });
 
 const showReportsPagination = computed(() => {
-  return totalReportsItems.value > reportsPerPage.value;
+  const per = reportsPagination.value.perPage || reportsPerPage.value || 1;
+  return totalReportsItems.value > per;
 });
 
 const totalTransactionsPages = computed(() => {
-  return Math.ceil(totalTransactionsItems.value / transactionsPerPage.value);
+  const per =
+    transactionsPagination.value.perPage || transactionsPerPage.value || 1;
+  return Math.max(1, Math.ceil(totalTransactionsItems.value / per));
 });
 
 const paginatedTransactions = computed(() => {
@@ -1069,7 +1122,9 @@ const paginatedTransactions = computed(() => {
 });
 
 const showTransactionsPagination = computed(() => {
-  return totalTransactionsItems.value > transactionsPerPage.value;
+  const per =
+    transactionsPagination.value.perPage || transactionsPerPage.value || 1;
+  return totalTransactionsItems.value > per;
 });
 
 const lastThreeArticles = computed(() => {
@@ -1102,43 +1157,37 @@ const isPayoutAmountValid = computed(() => {
 
 const nextReleasesPage = async () => {
   if (currentReleasesPage.value < totalReleasesPages.value) {
-    currentReleasesPage.value++;
-    await fetchReleasesPage(currentReleasesPage.value);
+    await fetchReleasesPage(currentReleasesPage.value + 1);
   }
 };
 
 const prevReleasesPage = async () => {
   if (currentReleasesPage.value > 1) {
-    currentReleasesPage.value--;
-    await fetchReleasesPage(currentReleasesPage.value);
+    await fetchReleasesPage(currentReleasesPage.value - 1);
   }
 };
 
 const nextReportsPage = async () => {
   if (currentReportsPage.value < totalReportsPages.value) {
-    currentReportsPage.value++;
-    await fetchReportsPage(currentReportsPage.value);
+    await fetchReportsPage(currentReportsPage.value + 1);
   }
 };
 
 const prevReportsPage = async () => {
   if (currentReportsPage.value > 1) {
-    currentReportsPage.value--;
-    await fetchReportsPage(currentReportsPage.value);
+    await fetchReportsPage(currentReportsPage.value - 1);
   }
 };
 
 const nextTransactionsPage = async () => {
   if (currentTransactionsPage.value < totalTransactionsPages.value) {
-    currentTransactionsPage.value++;
-    await fetchTransactionsPage(currentTransactionsPage.value);
+    await fetchTransactionsPage(currentTransactionsPage.value + 1);
   }
 };
 
 const prevTransactionsPage = async () => {
   if (currentTransactionsPage.value > 1) {
-    currentTransactionsPage.value--;
-    await fetchTransactionsPage(currentTransactionsPage.value);
+    await fetchTransactionsPage(currentTransactionsPage.value - 1);
   }
 };
 
@@ -1159,43 +1208,126 @@ const getFullUrl = (path: string) => {
   return `${API_BASE_URL}${cleanPath}`;
 };
 
+const getCurrentDate = (): Date => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
+/** Дата выхода: PROPERTY_DATE_RELIZ (YYYY-MM-DD), иначе начало DATE_CREATE (DD.MM.YYYY). */
+const getReleaseDate = (release: Release): Date | null => {
+  const pri = release.propertyDateRelizValue?.trim();
+  if (pri) {
+    const iso = pri.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      const dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+      dt.setHours(0, 0, 0, 0);
+      return dt;
+    }
+  }
+  const raw = release.date?.trim();
+  if (!raw) return null;
+  const dm = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (dm) {
+    const dt = new Date(Number(dm[3]), Number(dm[2]) - 1, Number(dm[1]));
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  }
+  return null;
+};
+
+/** День выхода наступил (сегодня или раньше); без разбираемой даты — false → поддержка / не musicfetch. */
+const isReleaseDayReached = (release: Release): boolean => {
+  const d = getReleaseDate(release);
+  if (!d) return false;
+  return d <= getCurrentDate();
+};
+
+/** Разворачивает ответ Bitrix: несколько значений ZVONKO_TRACK_JSON и вложенные массивы */
+const flattenZvonkoTrackRows = (raw: unknown): any[] => {
+  if (raw == null) return [];
+  if (typeof raw === 'string') {
+    try {
+      return flattenZvonkoTrackRows(JSON.parse(raw));
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) {
+    const out: any[] = [];
+    for (const el of raw) {
+      if (Array.isArray(el)) out.push(...flattenZvonkoTrackRows(el));
+      else if (el && typeof el === 'object') out.push(el);
+    }
+    return out;
+  }
+  if (typeof raw === 'object') return [raw];
+  return [];
+};
+
 // Функция для извлечения треков из данных API
 const extractTracks = (item: any): Track[] => {
   let tracks: Track[] = [];
-  
+
   if (item.PROPERTY_ZVONKO_TRACK_JSON) {
     try {
-      let trackData = item.PROPERTY_ZVONKO_TRACK_JSON;
-      
-      // Если это строка JSON, парсим
-      if (typeof trackData === 'string') {
-        trackData = JSON.parse(trackData);
-      }
-      
-      // Если это массив
-      if (Array.isArray(trackData)) {
-        tracks = trackData.map((track: any) => ({
-          id: track.id,
-          title: track.title,
-          duration: track.duration,
-          track_number: track.track_number,
-          isrc: track.isrc,
-          lyrics: track.lyrics,
-          artist: track.artist,
-          composer: track.composer,
-          lyricist: track.lyricist,
-          is_explicit: track.is_explicit
-        }));
-      }
+      const rows = flattenZvonkoTrackRows(item.PROPERTY_ZVONKO_TRACK_JSON);
+      tracks = rows.map((track: any) => ({
+        id: track.id,
+        title: track.title,
+        duration: track.duration ?? 0,
+        track_number: track.track_number ?? 0,
+        isrc: track.isrc,
+        lyrics: track.lyrics,
+        artist: track.artist,
+        composer: track.composer,
+        lyricist: track.lyricist,
+        is_explicit: track.is_explicit,
+      }));
     } catch (e) {
       console.error('Ошибка парсинга треков:', e);
     }
   }
-  
-  // Сортировка треков по номеру
-  tracks.sort((a, b) => a.track_number - b.track_number);
-  
+
+  // Без Zvonko: названия из свойства TRACK (GetData) — только для альбомов
+  const isAlbum =
+    item.PROPERTY_NEW_DOCX_VALUE === '1' || item.PROPERTY_NEW_DOCX_VALUE === 1;
+  if (tracks.length === 0 && isAlbum) {
+    const names = item.TRACK;
+    const ids = item.TRACK_IDS;
+    if (Array.isArray(names) && names.length > 0) {
+      tracks = names.map((title: string, i: number) => ({
+        id:
+          Array.isArray(ids) && ids[i] != null && ids[i] !== ''
+            ? Number(ids[i])
+            : i + 1,
+        title: String(title),
+        duration: 0,
+        track_number: i + 1,
+        fromTrackProperty: true,
+      }));
+    }
+  }
+
+  tracks.sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
+
   return tracks;
+};
+
+/** Ссылка для блока релиза: смарт-ссылка Zvonko либо ручное свойство PROPERTY_LINK. */
+const pickReleaseDisplayLink = (item: any): string => {
+  const smart =
+    item.PROPERTY_ZVONKO_ALBUM_JSON?.smart_link?.url ??
+    item.PROPERTY_ZVONKO_SMART_LINK_URL_VALUE ??
+    item.link;
+  const manual = item.PROPERTY_LINK_VALUE;
+  for (const c of [smart, manual]) {
+    if (typeof c === 'string') {
+      const t = c.trim();
+      if (t && t !== 'Нет данных') return t;
+    }
+  }
+  return '';
 };
 
 const fetchReleasesPage = async (page: number) => {
@@ -1210,7 +1342,7 @@ const fetchReleasesPage = async (page: number) => {
         date: item.DATE_CREATE || item.date,
         image: item.PROPERTY_ZVONKO_ALBUM_JSON?.image || item.image,
         upcCode: item.PROPERTY_ZVONKO_ALBUM_JSON?.upc || item.upc,
-        link: item.PROPERTY_ZVONKO_ALBUM_JSON?.smart_link?.url || item.PROPERTY_ZVONKO_SMART_LINK_URL_VALUE || item.link,
+        link: pickReleaseDisplayLink(item),
         contractFile: item.CONTRACT_FILE ? getFullUrl(item.CONTRACT_FILE) : null,
         hasPng: item.HAS_PNG,
         previewText: item.PREVIEW_TEXT,
@@ -1291,7 +1423,9 @@ const fetchTransactionsPage = async (page: number) => {
         status: item.STATUS === 'В обработке' ? 'processing' : 
                 item.STATUS === 'Завершено' ? 'completed' : 
                 item.STATUS === 'Отменено' ? 'cancelled' : 'processing',
-        amount: item.SUM ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || '₽'}` : '0 ₽',
+        amount: item.SUM
+          ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || transactionCurrencySuffix()}`
+          : `0 ${transactionCurrencySuffix()}`,
         currency: item.CURRENCY
       }));
       
@@ -1524,27 +1658,32 @@ const handleImageError = (event: Event) => {
 
 const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
   try {
-    const response = prefetched
-      ? { data: prefetched }
-      : await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    console.log('Данные из API:', response.data);
-    
-    if (response.data) {
-      isoldsumm.value = response.data.isoldsumm || "0";
+    const data = (prefetched ?? (await fetchSharedCabinetGetData()).data) as
+      | Record<string, unknown>
+      | undefined;
+    if (!data) {
+      return undefined;
     }
 
-    if (response.data && response.data.user) {
-      userName.value = response.data.user.name || response.data.user.login || 'Пользователь';
+    isoldsumm.value = (data.isoldsumm as string) || "0";
+
+    const user = data.user as Record<string, unknown> | undefined;
+    if (user) {
+      userName.value = (user.name as string) || (user.login as string) || 'Пользователь';
     }
-    
-    if (response.data && response.data.profile) {
-      const prof = response.data.profile as Record<string, unknown>;
-      const uf = (response.data.user as Record<string, unknown> | undefined)?.uf as
-        | Record<string, unknown>
-        | undefined;
+
+    if (data.profile) {
+      const prof = data.profile as Record<string, unknown>;
+      const uf = user?.uf as Record<string, unknown> | undefined;
       profileData.value.balance = (prof.balance as number) || 0;
       profileData.value.bonus = (prof.bonus as number) || 0;
       profileData.value.region = (prof.region as string) || 'Russia';
+      profileData.value.currency =
+        (prof.currency as 'RUB' | 'USD') ||
+        (profileData.value.region === 'Russia' ? 'RUB' : 'USD');
+      profileData.value.currencySymbol =
+        (prof.currencySymbol as string) ||
+        (profileData.value.region === 'Russia' ? '₽' : '$');
       showReportButton.value = !!prof.showReportButton;
       /* getData: isLabel <=> UF_LEBL; в profile нет ufLable */
       userLabel.value =
@@ -1558,15 +1697,14 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
       );
     }
 
-    syncLabelMenuFromGetDataResponse(
-      response.data as Record<string, unknown>
-    );
-    
-    if (response.data && response.data.reportYears) {
-      reportYears.value = response.data.reportYears;
+    syncLabelMenuFromGetDataResponse(data);
+
+    const years = data.reportYears;
+    if (years && Array.isArray(years)) {
+      reportYears.value = years as string[];
     }
-    
-    return response.data;
+
+    return data;
   } catch (error) {
     console.error('Ошибка при загрузке профиля:', error);
     throw error;
@@ -1575,15 +1713,18 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
 
 const fetchReleases = async () => {
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    if (response.data && response.data.releases) {
-      releasesData.value = response.data.releases.items.map((item: any) => ({
+    const response = await fetchSharedCabinetGetData();
+    const data = response.data as Record<string, unknown> | undefined;
+    const releases = data?.releases as Record<string, unknown> | undefined;
+    const items = releases?.items;
+    if (items && Array.isArray(items)) {
+      releasesData.value = items.map((item: any) => ({
         id: item.ID || item.id,
         name: item.NAME || item.name,
         date: item.DATE_CREATE || item.date,
         image: item.PROPERTY_ZVONKO_ALBUM_JSON?.image || item.image,
         upcCode: item.PROPERTY_ZVONKO_ALBUM_JSON?.upc || item.upc,
-        link: item.PROPERTY_ZVONKO_ALBUM_JSON?.smart_link?.url || item.PROPERTY_ZVONKO_SMART_LINK_URL_VALUE || item.link,
+        link: pickReleaseDisplayLink(item),
         contractFile: item.CONTRACT_FILE ? getFullUrl(item.CONTRACT_FILE) : null,
         hasPng: item.HAS_PNG,
         previewText: item.PREVIEW_TEXT,
@@ -1598,9 +1739,9 @@ const fetchReleases = async () => {
       }));
       
       releasesPagination.value = {
-        currentPage: response.data.releases.currentPage || 1,
-        perPage: response.data.releases.perPage || releasesPerPage.value,
-        total: response.data.releases.total || "0"
+        currentPage: (releases.currentPage as number) || 1,
+        perPage: (releases.perPage as number) || releasesPerPage.value,
+        total: (releases.total as string) || "0"
       };
       currentReleasesPage.value = releasesPagination.value.currentPage;
     }
@@ -1612,9 +1753,12 @@ const fetchReleases = async () => {
 
 const fetchReports = async () => {
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    if (response.data && response.data.downloadedReports) {
-      reportsData.value = response.data.downloadedReports.items.map((item: any) => ({
+    const response = await fetchSharedCabinetGetData();
+    const data = response.data as Record<string, unknown> | undefined;
+    const downloaded = data?.downloadedReports as Record<string, unknown> | undefined;
+    const repItems = downloaded?.items;
+    if (repItems && Array.isArray(repItems)) {
+      reportsData.value = repItems.map((item: any) => ({
         id: item.id,
         filename: item.name || 'Отчёт',
         filesize:
@@ -1632,9 +1776,9 @@ const fetchReports = async () => {
       }));
       
       reportsPagination.value = {
-        currentPage: response.data.downloadedReports.currentPage || 1,
-        perPage: response.data.downloadedReports.perPage || reportsPerPage.value,
-        total: response.data.downloadedReports.totalItems?.toString() || "0"
+        currentPage: (downloaded.currentPage as number) || 1,
+        perPage: (downloaded.perPage as number) || reportsPerPage.value,
+        total: (downloaded.totalItems as number | string | undefined)?.toString() || "0"
       };
       currentReportsPage.value = reportsPagination.value.currentPage;
     }
@@ -1646,9 +1790,12 @@ const fetchReports = async () => {
 
 const fetchTransactions = async () => {
   try {
-    const response = await sendRequest('get', '/ajax_vue/ajax/getData.php', {});
-    if (response.data && response.data.finances) {
-      transactionsData.value = response.data.finances.items.map((item: any, index: number) => ({
+    const response = await fetchSharedCabinetGetData();
+    const data = response.data as Record<string, unknown> | undefined;
+    const finances = data?.finances as Record<string, unknown> | undefined;
+    const finItems = finances?.items;
+    if (finItems && Array.isArray(finItems)) {
+      transactionsData.value = finItems.map((item: any, index: number) => ({
         id: item.ID || index + 1,
         type: item.TYPE || 'Транзакция',
         date: item.DATE || '',
@@ -1656,14 +1803,16 @@ const fetchTransactions = async () => {
         status: item.STATUS === 'В обработке' ? 'processing' : 
                 item.STATUS === 'Завершено' ? 'completed' : 
                 item.STATUS === 'Отменено' ? 'cancelled' : 'processing',
-        amount: item.SUM ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || '₽'}` : '0 ₽',
+        amount: item.SUM
+          ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || transactionCurrencySuffix()}`
+          : `0 ${transactionCurrencySuffix()}`,
         currency: item.CURRENCY
       }));
       
       transactionsPagination.value = {
-        currentPage: response.data.finances.currentPage || 1,
-        perPage: response.data.finances.perPage || transactionsPerPage.value,
-        total: response.data.finances.total || "0"
+        currentPage: (finances.currentPage as number) || 1,
+        perPage: (finances.perPage as number) || transactionsPerPage.value,
+        total: (finances.total as string) || "0"
       };
       currentTransactionsPage.value = transactionsPagination.value.currentPage;
     }
@@ -1697,7 +1846,7 @@ const fetchPartners = async () => {
         name: user.LOGIN || 'Без имени',
         email: user.EMAIL || '',
         date: formatDate(user.DATE_REGISTER),
-        earnings: user.PAYOUT || '0 ₽',
+        earnings: user.PAYOUT || `0 ${profileData.value.currencySymbol}`,
         releases: formatReleases(user.UF_RELEASES)
       }));
     } else {
@@ -1744,7 +1893,9 @@ const formatReleases = (releases: string | number) => {
 
 const openPayoutAmountPopup = () => {
   if (profileData.value.balance < minPayoutAmount.value) {
-    alert(`Минимальная сумма для выплаты: ${minPayoutAmount.value} ₽`);
+    alert(
+      `Минимальная сумма для выплаты: ${minPayoutAmount.value} ${profileData.value.currencySymbol}`
+    );
     return;
   }
   
@@ -1757,7 +1908,7 @@ const openPayoutAmountPopup = () => {
 
 const requestPayoutAct = async () => {
   if (!isPayoutAmountValid.value) {
-    actError.value = `Сумма должна быть от ${minPayoutAmount.value} до ${profileData.value.balance}`;
+    actError.value = `Сумма должна быть от ${minPayoutAmount.value} до ${profileData.value.balance} ${profileData.value.currencySymbol}`;
     return;
   }
 
@@ -1766,7 +1917,7 @@ const requestPayoutAct = async () => {
   actError.value = '';
 
   try {
-    const valuta = profileData.value.region === 'Russia' ? 'RUB' : 'USD';
+    const valuta = profileData.value.currency;
     
     const response = await sendRequest('post', '/ajax_vue/ajax/profile/aktVyplata.php', {
       summ: payoutAmount.value,
@@ -1811,7 +1962,7 @@ const submitToVyplataApi = async () => {
   vyplataError.value = '';
   
   try {
-    const valuta = profileData.value.region === 'Russia' ? 'RUB' : 'USD';
+    const valuta = profileData.value.currency;
     
     const response = await sendRequest('post', '/ajax_vue/ajax/profile/vyplata.php', {
       summ: payoutAmount.value,
@@ -1951,7 +2102,7 @@ const submitBonusPayout = async () => {
   payoutError.value = '';
 
   try {
-    const valuta = profileData.value.region === 'Russia' ? 'RUB' : 'USD';
+    const valuta = profileData.value.currency;
     
     const response = await sendRequest('post', '/ajax_vue/ajax/profile/bonusVyplata.php', {
       summ: bonusPayoutAmount.value,
@@ -2082,73 +2233,47 @@ const refreshPersonalAfterShellEvent = async (
   }
 };
 
-// Вспомогательная функция для получения текущей даты
-const getCurrentDate = (): Date => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
-};
-
-// Функция для получения даты релиза
-const getReleaseDate = (release: Release): Date | null => {
-  const dateStr = release.propertyDateRelizValue || release.date;
-  if (!dateStr) return null;
-  
-  // Парсим дату в формате YYYY-MM-DD
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    const year = parseInt(parts[0]);
-    const month = parseInt(parts[1]) - 1;
-    const day = parseInt(parts[2]);
-    return new Date(year, month, day);
-  }
-  return null;
-};
-
-// Функция для получения текста отображения UPC
 const getUpcDisplayText = (release: Release): string => {
-  // Если данные уже есть
   if (release.upcCode && release.upcCode !== 'Нет данных') {
     return release.upcCode;
   }
-  
-  const releaseDate = getReleaseDate(release);
-  const currentDate = getCurrentDate();
-  
-  // Если дата релиза меньше или равна текущей (релиз уже должен быть)
-  if (releaseDate && releaseDate <= currentDate) {
-    return 'узнать';
-  }
-  
-  // Если дата релиза в будущем или нет данных о дате
-  return 'уточнить в поддержке';
+  return isReleaseDayReached(release) ? 'узнать' : 'уточнить в поддержке';
 };
 
-// Обработчик клика по UPC
 const handleUpcClick = (release: Release) => {
   const displayText = getUpcDisplayText(release);
-  
+
   if (displayText === 'уточнить в поддержке') {
     openSupportPage();
   } else if (displayText === 'узнать') {
-    window.open('https://musicfetch.io/upc-finder', '_blank');
-  } else if (displayText !== 'уточнить в поддержке' && displayText !== 'узнать') {
-    // Если есть код - копируем
+    window.open('https://musicfetch.io/upc-finder', '_blank', 'noopener,noreferrer');
+  } else {
     copyToClipboard(release.upcCode!, 'UPC код');
   }
 };
 
-// Функция открытия страницы поддержки (для UPC и ссылки)
-const openSupportPage = () => {
-  const supportUrl = '/support'; // Замените на реальный URL
-  window.open(supportUrl, '_blank');
+const getReleaseLinkPlaceholderLabel = (
+  release: Release
+): 'уточнить в поддержке' | 'создать ссылку' => {
+  return isReleaseDayReached(release) ? 'создать ссылку' : 'уточнить в поддержке';
 };
 
-watch(currentReportsPage, async (newPage) => {
-  if (newPage > 0) {
-    await fetchReportsPage(newPage);
+const handleCreateReleaseLinkPlaceholder = (_release: Release) => {
+  ElMessage.info('Раздел «Создать ссылку» будет доступен после подключения сервиса по API.');
+};
+
+const handleReleaseLinkPlaceholderClick = (release: Release) => {
+  const label = getReleaseLinkPlaceholderLabel(release);
+  if (label === 'уточнить в поддержке') {
+    openSupportPage();
+  } else {
+    handleCreateReleaseLinkPlaceholder(release);
   }
-});
+};
+
+const openSupportPage = () => {
+  router.push(Tr.i18nRoute({ name: 'support' }));
+};
 
 onMounted(() => {
   unregisterPersonalShellRefresh = registerLabelArtistsExternalRefresh(
@@ -2864,6 +2989,22 @@ onUnmounted(() => {
     margin-top: 2px;
   }
 
+  &_isrc_link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+
+    :deep(.personal__tracks_link_svg) {
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+      max-width: 14px;
+      max-height: 14px;
+      display: block;
+    }
+  }
+
   &_isrc_action {
     cursor: pointer;
     transition: all 0.3s ease;
@@ -3496,6 +3637,22 @@ onUnmounted(() => {
   &__empty_hint {
     margin-top: 8px;
     color: var(--text-gray-light);
+  }
+
+  &__empty_list {
+    margin: 12px 0;
+    padding-left: 30px;
+    li {
+      margin-bottom: 6px;
+      font-size: 14px;
+      &:last-child {
+        margin-bottom: 0;
+      }
+      &::marker {
+        font-size: 14px;
+      }
+    }
+    
   }
 
   &__info-message {

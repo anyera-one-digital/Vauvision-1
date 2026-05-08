@@ -53,6 +53,7 @@
           <QuizForm 
             v-if="showForm" 
             :current-step="currentStep" 
+            :payment-return-status="paymentReturnStatus"
             @update:current-step="goToStep"
             @go-back="handleGoBack"
             ref="quizFormRef"
@@ -68,17 +69,27 @@
 import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import QuizForm from "@/components/layout/QuizForm.vue";
-import { ref, onMounted, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET } from "@/composables/labelArtistsMenu";
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import Tr from "@/i18n/translation";
 
 const route = useRoute();
+const router = useRouter();
 
 // Состояния для переключения
 const showForm = ref(false);
 const currentStep = ref(1);
 const isRestarting = ref(false);
 const hasSavedData = ref(true);
+
+/** Возврат с оплаты на шаг 8 — показ PaymentStatus в QuizForm */
+const paymentReturnStatus = computed<'success' | 'error' | null>(() => {
+  const p = route.query.payment;
+  const v = Array.isArray(p) ? p[0] : p;
+  if (v === 'success' || v === 'error') return v;
+  return null;
+});
 
 /** Прямой заход на экран статуса оплаты: /release?payment=success|error */
 watch(
@@ -149,8 +160,28 @@ const checkSavedData = async () => {
   }
 };
 
-// Функция для переключения на форму
-const showQuizForm = () => {
+// Перед входом в форму — проверка паспорта и реквизитов (как на прод-сборке)
+const showQuizForm = async () => {
+  try {
+    const { fetchReleaseProfileReadiness } = await import(
+      '@/utils/releaseProfileReadiness'
+    );
+    const readiness = await fetchReleaseProfileReadiness();
+    if (!readiness.ok) {
+      await router.push(
+        Tr.i18nRoute({
+          name: 'setting',
+          query: {
+            releaseBlocked: '1',
+            focus: readiness.focus,
+          },
+        }),
+      );
+      return;
+    }
+  } catch {
+    /* без сети / ошибка проверки — не блокируем оформление */
+  }
   showForm.value = true;
 };
 
@@ -275,6 +306,27 @@ const clearLocalStorage = () => {
   return keysToRemove.length;
 };
 
+/** Очищает sessionStorage, но восстанавливает ключи переключателя лейбла/артистов. */
+const clearSessionStoragePreserveLabelShell = () => {
+  const preserved: Record<string, string> = {};
+  for (const key of SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET) {
+    try {
+      const v = sessionStorage.getItem(key);
+      if (v !== null) preserved[key] = v;
+    } catch {
+      /* ignore */
+    }
+  }
+  sessionStorage.clear();
+  for (const [key, value] of Object.entries(preserved)) {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch {
+      /* ignore */
+    }
+  }
+};
+
 // Основная функция очистки
 const restartFromBeginning = async () => {
   if (isRestarting.value) return;
@@ -287,9 +339,9 @@ const restartFromBeginning = async () => {
     const removedCount = clearLocalStorage();
     console.log(`📦 Очищено ${removedCount} записей из localStorage`);
     
-    // 2. Очищаем sessionStorage
-    sessionStorage.clear();
-    console.log('📦 Очищен sessionStorage');
+    // 2. Очищаем sessionStorage (ключи переключателя лейбла сохраняем)
+    clearSessionStoragePreserveLabelShell();
+    console.log('📦 Очищен sessionStorage (сохранены ключи лейбла)');
     
     // 3. Принудительно закрываем соединения с основными БД
     await forceCloseAllConnections('quizDB');
