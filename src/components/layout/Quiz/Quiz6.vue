@@ -58,23 +58,6 @@
         />
       </div>
 
-      <!-- Права на инструменталы (поле instrumentals в order.php) -->
-      <div class="form__group">
-        <label for="rightsInfo" class="form__label button">права на инструменталы</label>
-        <p class="form__hint text_small">
-          Если есть особенности по инструментальным версиям треков — опишите здесь. Текст попадает в заявку и TXT релиза.
-        </p>
-        <el-input
-          id="rightsInfo"
-          v-model="formData.rightsInfo"
-          type="textarea"
-          :rows="4"
-          placeholder="Например: права на минусовки, использование сэмплов…"
-          size="large"
-          :disabled="uploadingFiles || isGeneratingContract"
-        />
-      </div>
-
       <!-- Промо-план релиза -->
       <div class="form__group">
         <label for="promoPlan" class="form__label button">Промо-план релиза для редакторов площадок</label>
@@ -265,6 +248,7 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { ElSelect, ElOption, ElInput, ElCheckbox, ElInputNumber, ElMessage, ElButton } from 'element-plus';
 import { sendRequest, FileRequest } from '@/utils/api';
+import { buildInstrumentalsFromQuiz2 } from '@/utils/quizInstrumentalsSummary';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import { openDB } from 'idb';
 
@@ -331,7 +315,6 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 const formData = reactive({
   platforms: [] as string[],
   otherPlatform: '',
-  rightsInfo: '',
   additionalComments: '',
   promoPlan: '',
   bandlinkUrl: '',
@@ -509,7 +492,6 @@ const createSafeStateCopy = () => {
   const safeFormData = {
     platforms: Array.isArray(formData.platforms) ? [...formData.platforms] : [],
     otherPlatform: String(formData.otherPlatform || ''),
-    rightsInfo: String(formData.rightsInfo || ''),
     additionalComments: String(formData.additionalComments || ''),
     promoPlan: String(formData.promoPlan || ''),
     bandlinkUrl: String(formData.bandlinkUrl || ''),
@@ -583,7 +565,6 @@ const loadStateFromDB = async () => {
         if (savedState.formData) {
           formData.platforms = savedState.formData.platforms || [];
           formData.otherPlatform = savedState.formData.otherPlatform || '';
-          formData.rightsInfo = savedState.formData.rightsInfo || '';
           formData.additionalComments = savedState.formData.additionalComments || '';
           formData.promoPlan = savedState.formData.promoPlan || '';
           formData.bandlinkUrl = savedState.formData.bandlinkUrl || '';
@@ -1595,7 +1576,10 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
   const otkudaString = formData.platforms.join(', ');
   formDataToSend.append('otkuda-uznali', otkudaString);
   formDataToSend.append('others-otkuda', formData.otherPlatform || '');
-  formDataToSend.append('instrumentals', String(formData.rightsInfo || '').trim());
+  formDataToSend.append(
+    'instrumentals',
+    buildInstrumentalsFromQuiz2(quiz2State),
+  );
   formDataToSend.append('comments', formData.additionalComments || '');
   formDataToSend.append('plan', formData.promoPlan || '');
   formDataToSend.append('link-bandlink', formData.bandlinkUrl || '');
@@ -1737,7 +1721,6 @@ const debouncedSave = () => {
 
 watch(() => formData.platforms, () => { if (dataLoaded.value) debouncedSave(); }, { deep: true });
 watch(() => formData.otherPlatform, () => { if (dataLoaded.value) debouncedSave(); });
-watch(() => formData.rightsInfo, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.additionalComments, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.promoPlan, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.bandlinkUrl, () => { if (dataLoaded.value) debouncedSave(); });

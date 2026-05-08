@@ -93,6 +93,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { FileRequest } from '@/utils/api';
+import { buildInstrumentalsFromQuiz2 } from '@/utils/quizInstrumentalsSummary';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import PaymentWay from '@/components/layout/Quiz/PaymentWay.vue';
 import { openDB } from 'idb';
@@ -194,6 +195,7 @@ interface SingleTrack {
   product_id?: string;
   rightsType?: string;
   rightsContractLink?: string;
+  additionalInfo?: string;
 }
 
 interface AlbumTrack {
@@ -207,6 +209,7 @@ interface AlbumTrack {
   product_id?: string;
   rightsType?: string;
   rightsContractLink?: string;
+  additionalInfo?: string;
 }
 
 interface Album {
@@ -298,8 +301,6 @@ interface Quiz6Data {
   formData?: {
     platforms?: string[];
     otherPlatform?: string;
-    rightsInfo?: string;
-    rightsContractLink?: string;
     additionalComments?: string;
     promoPlan?: string;
     bandlinkUrl?: string;
@@ -1092,6 +1093,11 @@ const prepareOrderData = async (): Promise<FormData> => {
     console.log('--- НЕТ АЛЬБОМОВ, пропускаем ---');
   }
 
+  formData.append(
+    'instrumentals',
+    buildInstrumentalsFromQuiz2(quiz2Data.value ?? undefined),
+  );
+
   // --- 4. ШАГ 3: Информация о релизе ---
   if (quiz3Data.value?.formData) {
     const f = quiz3Data.value.formData;
@@ -1225,7 +1231,6 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('otkuda-uznali1', platformValue);
     formData.append('otkuda-uznali', platformValue);
     formData.append('others-otkuda', a.otherPlatform || '');
-    formData.append('instrumentals', String(a.rightsInfo || '').trim());
     formData.append('comments', a.additionalComments || '');
     formData.append('plan', a.promoPlan || '');
     formData.append('link-bandlink', a.bandlinkUrl || '');
