@@ -108,6 +108,7 @@ export const labelGroupId = ref<string | number>(0);
 export const labelGroupName = ref("");
 export const apiLabelArtists = ref<LabelArtist[]>([]);
 export const apiIsLabel = ref(false);
+export const apiHasLabelGroupContext = ref(false);
 export const artistsRootRef = ref<HTMLElement | null>(null);
 export const artistsDropdownOpen = ref(false);
 export const labelArtists = ref<LabelArtist[]>([]);
@@ -169,7 +170,14 @@ function syncLabelFromProfile(
   profile: Record<string, unknown> | null | undefined,
   user?: Record<string, unknown> | null
 ) {
-  if (!profile) return;
+  if (!profile) {
+    apiIsLabel.value = false;
+    apiHasLabelGroupContext.value = false;
+    apiLabelArtists.value = [];
+    labelGroupId.value = 0;
+    labelGroupName.value = "";
+    return;
+  }
   const uf = user?.uf as Record<string, unknown> | undefined;
   const isLabel =
     profile.isLabel === true ||
@@ -190,6 +198,10 @@ function syncLabelFromProfile(
   const gname = profile.groupName;
   labelGroupName.value =
     typeof gname === "string" ? gname.trim() : String(gname ?? "").trim();
+  apiHasLabelGroupContext.value =
+    apiLabelArtists.value.length > 0 ||
+    !!(Number.isFinite(n) && n > 0) ||
+    deriveMaxBitrixGroupId(user?.groups) != null;
 }
 
 function parseAddLableUserPhpResponse(
@@ -234,6 +246,15 @@ export const viewingArtistAsLabelManager = computed(() => {
   return String(ret) !== String(cur);
 });
 
+/** Роли аккаунта на основе getData.php + клиентского контекста. */
+export const isLabelOwner = computed(() => apiIsLabel.value);
+export const isLabelMember = computed(
+  () => !isLabelOwner.value && apiHasLabelGroupContext.value
+);
+export const isSoloArtist = computed(
+  () => !isLabelOwner.value && !isLabelMember.value
+);
+
 export const hasOtherArtistsInRoster = computed(() => {
   const list = labelArtists.value;
   const cur = bitrixUserId.value;
@@ -244,12 +265,18 @@ export const hasOtherArtistsInRoster = computed(() => {
 
 export const useDropdownArtistList = computed(() => {
   if (viewingArtistAsLabelManager.value) return true;
-  if (apiIsLabel.value && hasOtherArtistsInRoster.value) return true;
+  if ((isLabelOwner.value || isLabelMember.value) && hasOtherArtistsInRoster.value) {
+    return true;
+  }
   return false;
 });
 
+export const canAddArtistFromMenu = computed(
+  () => isLabelOwner.value || viewingArtistAsLabelManager.value || isSoloArtist.value
+);
+
 export const showStandaloneAddArtist = computed(
-  () => !useDropdownArtistList.value
+  () => !useDropdownArtistList.value && canAddArtistFromMenu.value
 );
 
 /** Псевдоним текущего кабинета в ростере лейбла или отображаемое имя / логин из getData */
@@ -413,6 +440,7 @@ export async function openArtistCabinet(id: string) {
 }
 
 export function openAddArtistModal() {
+  if (!canAddArtistFromMenu.value) return;
   addArtistError.value = "";
   newArtistPseudonym.value = "";
   addArtistModalOpen.value = true;
@@ -453,6 +481,8 @@ async function buildNewArtistInheritFieldsFromLabelProfile(): Promise<
             address?: string;
             inn?: string;
             account?: string;
+            bankName?: string;
+            bankInn?: string;
             bik?: string;
             correspondentAccount?: string;
             email?: string;
@@ -490,6 +520,8 @@ async function buildNewArtistInheritFieldsFromLabelProfile(): Promise<
       put("INHERIT_IP_ADDR", ent.address);
       put("INHERIT_IP_INN", ent.inn);
       put("INHERIT_IP_RS", ent.account);
+      put("INHERIT_IP_BANK", ent.bankName);
+      put("INHERIT_IP_BANK_INN", ent.bankInn);
       put("INHERIT_IP_BIK", ent.bik);
       put("INHERIT_IP_KS", ent.correspondentAccount);
       put("INHERIT_IP_EMAIL", ent.email);
@@ -510,6 +542,10 @@ async function buildNewArtistInheritFieldsFromLabelProfile(): Promise<
 }
 
 export async function submitNewArtist() {
+  if (!canAddArtistFromMenu.value) {
+    addArtistError.value = "Добавление артистов доступно только кабинету лейбла.";
+    return;
+  }
   addArtistError.value = "";
   const artistName = newArtistPseudonym.value.trim();
   if (!artistName) {

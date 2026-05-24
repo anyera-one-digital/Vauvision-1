@@ -29,6 +29,8 @@ const formData = reactive({
   userType: 'individual',
   
   // Поля для ИП
+  entrepreneurFullName: '',
+  entrepreneurEmail: '',
   legalAddress: '',
   inn: '',
   ogrn: '',
@@ -37,7 +39,6 @@ const formData = reactive({
   bankInn: '',
   bankBik: '',
   correspondentAccount: '',
-  bankLegalAddress: '',
   
   // Общие поля
   citizenship: '',
@@ -54,6 +55,8 @@ const formData = reactive({
 // Ошибки валидации
 const errors = reactive({
   userType: '',
+  entrepreneurFullName: '',
+  entrepreneurEmail: '',
   legalAddress: '',
   inn: '',
   ogrn: '',
@@ -62,7 +65,6 @@ const errors = reactive({
   bankInn: '',
   bankBik: '',
   correspondentAccount: '',
-  bankLegalAddress: '',
   citizenship: '',
   otherCitizenship: '',
   lastName: '',
@@ -79,6 +81,83 @@ const citizenshipOptions = [
   { label: 'Российская Федерация', value: 'RU' },
   { label: 'Другое', value: 'other' }
 ];
+
+/** Поля только для ИП: сброс/подстановка из профиля и черновик при переключении типа лица */
+const ENTREPRENEUR_FIELD_KEYS = [
+  'entrepreneurFullName',
+  'entrepreneurEmail',
+  'legalAddress',
+  'inn',
+  'ogrn',
+  'accountNumber',
+  'bankName',
+  'bankInn',
+  'bankBik',
+  'correspondentAccount',
+] as const;
+
+type EntrepreneurFieldKey = (typeof ENTREPRENEUR_FIELD_KEYS)[number];
+
+/** Копия реквизитов ИП при переключении на физлицо (чтобы вернуть при обратном выборе ИП) */
+const entrepreneurDraftBackup = reactive(
+  Object.fromEntries(ENTREPRENEUR_FIELD_KEYS.map((k) => [k, ''])) as Record<
+    EntrepreneurFieldKey,
+    string
+  >,
+);
+
+/** Слепок реквизитов ИП из профиля: используем как seed при первом переключении на ИП. */
+const entrepreneurProfileSeed = reactive(
+  Object.fromEntries(ENTREPRENEUR_FIELD_KEYS.map((k) => [k, ''])) as Record<
+    EntrepreneurFieldKey,
+    string
+  >,
+);
+
+const hasAnyEntrepreneurValues = (
+  source: Record<EntrepreneurFieldKey, string>,
+): boolean =>
+  ENTREPRENEUR_FIELD_KEYS.some((k) => String(source[k] || '').trim().length > 0);
+
+const snapshotEntrepreneurBackupFromForm = () => {
+  for (const k of ENTREPRENEUR_FIELD_KEYS) {
+    entrepreneurDraftBackup[k] = formData[k];
+  }
+};
+
+const snapshotEntrepreneurBackupFromSeed = () => {
+  for (const k of ENTREPRENEUR_FIELD_KEYS) {
+    entrepreneurDraftBackup[k] = entrepreneurProfileSeed[k];
+  }
+};
+
+const restoreEntrepreneurBackupToForm = () => {
+  for (const k of ENTREPRENEUR_FIELD_KEYS) {
+    formData[k] = entrepreneurDraftBackup[k];
+  }
+};
+
+const setEntrepreneurProfileSeedField = (
+  key: EntrepreneurFieldKey,
+  value: unknown,
+  stripSpaces = false,
+) => {
+  let normalized = value == null ? '' : String(value).trim();
+  if (stripSpaces) normalized = normalized.replace(/\s/g, '');
+  entrepreneurProfileSeed[key] = normalized;
+};
+
+const clearEntrepreneurFieldsOnly = () => {
+  for (const k of ENTREPRENEUR_FIELD_KEYS) {
+    formData[k] = '';
+  }
+};
+
+const clearEntrepreneurFieldErrors = () => {
+  for (const k of ENTREPRENEUR_FIELD_KEYS) {
+    errors[k] = '';
+  }
+};
 
 // Таймер для debounce сохранения
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -145,6 +224,8 @@ const saveStateToDB = async () => {
         id: STORAGE_KEY,
         formData: { 
           userType: formData.userType,
+          entrepreneurFullName: formData.entrepreneurFullName,
+          entrepreneurEmail: formData.entrepreneurEmail,
           legalAddress: formData.legalAddress,
           inn: formData.inn,
           ogrn: formData.ogrn,
@@ -153,7 +234,6 @@ const saveStateToDB = async () => {
           bankInn: formData.bankInn,
           bankBik: formData.bankBik,
           correspondentAccount: formData.correspondentAccount,
-          bankLegalAddress: formData.bankLegalAddress,
           citizenship: formData.citizenship,
           otherCitizenship: formData.otherCitizenship,
           lastName: formData.lastName,
@@ -194,6 +274,10 @@ const loadStateFromDB = async () => {
         if (savedState.formData) {
           // Явно восстанавливаем каждое поле, включая userType
           formData.userType = savedState.formData.userType || 'individual';
+          formData.entrepreneurFullName =
+            savedState.formData.entrepreneurFullName || '';
+          formData.entrepreneurEmail =
+            savedState.formData.entrepreneurEmail || '';
           formData.legalAddress = savedState.formData.legalAddress || '';
           formData.inn = savedState.formData.inn || '';
           formData.ogrn = savedState.formData.ogrn || '';
@@ -202,7 +286,6 @@ const loadStateFromDB = async () => {
           formData.bankInn = savedState.formData.bankInn || '';
           formData.bankBik = savedState.formData.bankBik || '';
           formData.correspondentAccount = savedState.formData.correspondentAccount || '';
-          formData.bankLegalAddress = savedState.formData.bankLegalAddress || '';
           formData.citizenship = savedState.formData.citizenship || '';
           formData.otherCitizenship = savedState.formData.otherCitizenship || '';
           formData.lastName = savedState.formData.lastName || '';
@@ -302,6 +385,16 @@ const loadUserData = async () => {
     }
 
     const str = (v: unknown) => (v == null ? '' : String(v).trim());
+    setEntrepreneurProfileSeedField('entrepreneurFullName', user.uf_fioip);
+    setEntrepreneurProfileSeedField('entrepreneurEmail', user.uf_email);
+    setEntrepreneurProfileSeedField('legalAddress', user.uf_addressip);
+    setEntrepreneurProfileSeedField('inn', user.uf_inn);
+    setEntrepreneurProfileSeedField('ogrn', user.uf_ogrn);
+    setEntrepreneurProfileSeedField('accountNumber', user.uf_rsip, true);
+    setEntrepreneurProfileSeedField('bankName', user.uf_bank);
+    setEntrepreneurProfileSeedField('bankInn', user.uf_inn_bank);
+    setEntrepreneurProfileSeedField('bankBik', user.uf_bikip, true);
+    setEntrepreneurProfileSeedField('correspondentAccount', user.uf_korr, true);
 
     /** Тип реквизитов в профиле: физлицо / ИП / неизвестно */
     const resolveProfileBankType = (): 'individual' | 'entrepreneur' | null => {
@@ -322,32 +415,28 @@ const loadUserData = async () => {
 
     const profileBankType = resolveProfileBankType();
 
-    const clearEntrepreneurOnlyFields = () => {
-      formData.legalAddress = '';
-      formData.inn = '';
-      formData.ogrn = '';
-      formData.accountNumber = '';
-      formData.bankName = '';
-      formData.bankInn = '';
-      formData.bankBik = '';
-      formData.correspondentAccount = '';
-      formData.bankLegalAddress = '';
-    };
-
     if (profileBankType === 'individual') {
       formData.userType = 'individual';
-      clearEntrepreneurOnlyFields();
+      clearEntrepreneurFieldsOnly();
+      if (hasAnyEntrepreneurValues(entrepreneurProfileSeed)) {
+        snapshotEntrepreneurBackupFromSeed();
+      }
     } else if (profileBankType === 'entrepreneur') {
       formData.userType = 'entrepreneur';
-      const digits = (v: unknown) => str(v).replace(/\s/g, '');
+      // Сначала очищаем ИП-поля от прошлого состояния квиза в IndexedDB, затем заполняем из профиля
+      clearEntrepreneurFieldsOnly();
 
       if (Number(user.uf_lico) === 2) {
-        formData.legalAddress = str(user.uf_addressip);
-        formData.inn = str(user.uf_inn);
-        formData.ogrn = str(user.uf_ogrn);
-        formData.accountNumber = digits(user.uf_rsip);
-        formData.bankBik = digits(user.uf_bikip);
-        formData.correspondentAccount = digits(user.uf_korr);
+        formData.entrepreneurFullName = entrepreneurProfileSeed.entrepreneurFullName;
+        formData.legalAddress = entrepreneurProfileSeed.legalAddress;
+        formData.inn = entrepreneurProfileSeed.inn;
+        formData.ogrn = entrepreneurProfileSeed.ogrn;
+        formData.accountNumber = entrepreneurProfileSeed.accountNumber;
+        formData.bankName = entrepreneurProfileSeed.bankName;
+        formData.bankInn = entrepreneurProfileSeed.bankInn;
+        formData.bankBik = entrepreneurProfileSeed.bankBik;
+        formData.correspondentAccount = entrepreneurProfileSeed.correspondentAccount;
+        formData.entrepreneurEmail = entrepreneurProfileSeed.entrepreneurEmail;
         console.log('✅ Реквизиты ИП синхронизированы с профилем (UF_LICO=2)');
       } else {
         const setIf = (key: keyof typeof formData, raw: unknown, strip = false) => {
@@ -355,14 +444,19 @@ const loadUserData = async () => {
           if (strip && t) t = t.replace(/\s/g, '');
           if (t) (formData as Record<string, string>)[key] = t;
         };
+        setIf('entrepreneurFullName', user.uf_fioip);
         setIf('legalAddress', user.uf_addressip);
         setIf('inn', user.uf_inn);
         setIf('ogrn', user.uf_ogrn);
         setIf('accountNumber', user.uf_rsip, true);
+        setIf('bankName', user.uf_bank);
+        setIf('bankInn', user.uf_inn_bank);
         setIf('bankBik', user.uf_bikip, true);
         setIf('correspondentAccount', user.uf_korr, true);
+        setIf('entrepreneurEmail', user.uf_email);
         console.log('✅ Подставлены реквизиты ИП из профиля');
       }
+      snapshotEntrepreneurBackupFromForm();
     }
 
   } catch (error) {
@@ -387,6 +481,8 @@ const isReadyForNextStep = computed(() => {
   }
   
   if (formData.userType === 'entrepreneur') {
+    if (!formData.entrepreneurFullName?.trim()) return false;
+    if (!formData.entrepreneurEmail?.trim()) return false;
     if (!formData.legalAddress?.trim()) return false;
     if (!formData.inn?.trim()) return false;
     if (!formData.ogrn?.trim()) return false;
@@ -395,13 +491,14 @@ const isReadyForNextStep = computed(() => {
     if (!formData.bankInn?.trim()) return false;
     if (!formData.bankBik?.trim()) return false;
     if (!formData.correspondentAccount?.trim()) return false;
-    if (!formData.bankLegalAddress?.trim()) return false;
   }
   
   return true;
 });
 
 // Валидация
+const validateEmailAddr = (email: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const validateINN = (inn: string): boolean => /^\d{12}$/.test(inn);
 const validateOGRN = (ogrn: string): boolean => /^\d{15}$/.test(ogrn);
 const validateBIK = (bik: string): boolean => /^\d{9}$/.test(bik);
@@ -422,7 +519,11 @@ const validateField = (fieldName: keyof typeof errors) => {
       if (!validateINN(value)) errors.inn = 'ИНН должен состоять из 12 цифр';
       break;
     case 'ogrn':
-      if (!validateOGRN(value)) errors.ogrn = 'ОГРН должен состоять из 15 цифр';
+      if (!validateOGRN(value)) errors.ogrn = 'ОГРН/ОГРНИП должен состоять из 15 цифр';
+      break;
+    case 'bankInn':
+      if (!/^\d{9,10}$/.test(value.replace(/\s/g, '')))
+        errors.bankInn = 'ИНН банка: 9–10 цифр';
       break;
     case 'bankBik':
       if (!validateBIK(value)) errors.bankBik = 'БИК должен состоять из 9 цифр';
@@ -441,7 +542,12 @@ const validateField = (fieldName: keyof typeof errors) => {
     case 'firstName':
     case 'middleName':
     case 'otherCitizenship':
+    case 'entrepreneurFullName':
       if (value.trim().length < 2) errors[fieldName] = 'Минимум 2 символа';
+      break;
+    case 'entrepreneurEmail':
+      if (!validateEmailAddr(value))
+        errors.entrepreneurEmail = 'Введите корректный e-mail';
       break;
   }
   
@@ -466,8 +572,16 @@ const validateForm = (): boolean => {
   
   if (formData.userType === 'entrepreneur') {
     fieldsToValidate.push(
-      'legalAddress', 'inn', 'ogrn', 'accountNumber', 'bankName',
-      'bankInn', 'bankBik', 'correspondentAccount', 'bankLegalAddress'
+      'entrepreneurFullName',
+      'legalAddress',
+      'inn',
+      'ogrn',
+      'accountNumber',
+      'bankName',
+      'bankInn',
+      'bankBik',
+      'correspondentAccount',
+      'entrepreneurEmail'
     );
   }
   
@@ -480,18 +594,6 @@ const validateForm = (): boolean => {
 
 const handleUserTypeChange = () => {
   errors.userType = '';
-  if (formData.userType !== 'entrepreneur') {
-    formData.legalAddress = '';
-    formData.inn = '';
-    formData.ogrn = '';
-    formData.accountNumber = '';
-    formData.bankName = '';
-    formData.bankInn = '';
-    formData.bankBik = '';
-    formData.correspondentAccount = '';
-    formData.bankLegalAddress = '';
-  }
-  if (dataLoaded.value) debouncedSave();
 };
 
 const handleCitizenshipChange = () => {
@@ -523,12 +625,30 @@ const debouncedSave = () => {
 };
 
 // Отдельные watchers для критических полей
-watch(() => formData.userType, (newVal) => {
-  if (dataLoaded.value) {
+watch(
+  () => formData.userType,
+  (newVal, oldVal) => {
+    if (!dataLoaded.value) return;
+
+    if (oldVal === 'entrepreneur' && newVal === 'individual') {
+      snapshotEntrepreneurBackupFromForm();
+      clearEntrepreneurFieldsOnly();
+      clearEntrepreneurFieldErrors();
+    } else if (oldVal === 'individual' && newVal === 'entrepreneur') {
+      if (
+        !hasAnyEntrepreneurValues(entrepreneurDraftBackup) &&
+        hasAnyEntrepreneurValues(entrepreneurProfileSeed)
+      ) {
+        snapshotEntrepreneurBackupFromSeed();
+      }
+      restoreEntrepreneurBackupToForm();
+      clearEntrepreneurFieldErrors();
+    }
+
     console.log('userType changed to:', newVal);
     debouncedSave();
-  }
-});
+  },
+);
 
 watch(
   () => formData.citizenship,
@@ -574,6 +694,14 @@ watch(() => formData.otherCitizenship, () => {
 });
 
 // Watcher для полей ИП
+watch(() => formData.entrepreneurFullName, () => {
+  if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
+});
+
+watch(() => formData.entrepreneurEmail, () => {
+  if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
+});
+
 watch(() => formData.legalAddress, () => {
   if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
 });
@@ -603,10 +731,6 @@ watch(() => formData.bankBik, () => {
 });
 
 watch(() => formData.correspondentAccount, () => {
-  if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
-});
-
-watch(() => formData.bankLegalAddress, () => {
   if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
 });
 
@@ -663,7 +787,9 @@ onUnmounted(() => {
 <template>
 <!-- Template остается точно таким же как в вашем файле -->
 <div class="quiz__form quiz__form_four">
-  <h4 class="quiz__form_head">Данные паспорта и реквизиты</h4>
+  <h4 class="quiz__form_head">
+    {{ formData.userType === 'entrepreneur' ? 'Данные паспорта и реквизиты' : 'Данные паспорта' }}
+  </h4>
   
   <div v-if="isLoading" class="quiz__form_loading">
     <span>Загрузка данных...</span>
@@ -703,6 +829,24 @@ onUnmounted(() => {
 
     <!-- Поля для ИП -->
     <template v-if="formData.userType === 'entrepreneur'">
+
+      <div class="form__group">
+        <label for="entrepreneurFullNameIp" class="form__label button">ФИО ПРЕДПРИНИМАТЕЛЯ<span>*</span></label>
+        <el-input
+          id="entrepreneurFullNameIp"
+          v-model="formData.entrepreneurFullName"
+          type="text"
+          :class="{ 'error': errors.entrepreneurFullName }"
+          placeholder="Иванов Иван Иванович"
+          @blur="validateField('entrepreneurFullName')"
+          @input="errors.entrepreneurFullName = ''"
+          size="large"
+        />
+        <div v-if="errors.entrepreneurFullName" class="error text_very">
+          {{ errors.entrepreneurFullName }}
+        </div>
+      </div>
+
       <!-- Юридический адрес организации -->
       <div class="form__group">
         <label for="legalAddress" class="form__label button">Юридический адрес организации<span>*</span></label>
@@ -740,15 +884,15 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- ОГРН -->
+      <!-- ОГРН/ОГРНИП -->
       <div class="form__group">
-        <label for="ogrn" class="form__label button">ОГРН<span>*</span></label>
+        <label for="ogrn" class="form__label button">ОГРН/ОГРНИП<span>*</span></label>
         <el-input
           id="ogrn"
           v-model="formData.ogrn"
           type="text"
           :class="{ 'error': errors.ogrn }"
-          placeholder="Введите ОГРН"
+          placeholder="Введите ОГРН/ОГРНИП"
           maxlength="15"
           @blur="validateField('ogrn')"
           @input="errors.ogrn = ''"
@@ -759,15 +903,15 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Расчетный счет -->
+      <!-- Расчётный счёт -->
       <div class="form__group">
-        <label for="accountNumber" class="form__label button">Расчетный счет<span>*</span></label>
+        <label for="accountNumber" class="form__label button">Расчётный счёт<span>*</span></label>
         <el-input
           id="accountNumber"
           v-model="formData.accountNumber"
           type="text"
           :class="{ 'error': errors.accountNumber }"
-          placeholder="Введите расчетный счет"
+          placeholder="Введите расчётный счёт"
           maxlength="20"
           @blur="validateField('accountNumber')"
           @input="errors.accountNumber = ''"
@@ -834,15 +978,15 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Корреспондентский счет банка -->
+      <!-- Корреспондентский счёт банка -->
       <div class="form__group">
-        <label for="correspondentAccount" class="form__label button">Корреспондентский счет банка<span>*</span></label>
+        <label for="correspondentAccount" class="form__label button">Корреспондентский счёт банка<span>*</span></label>
         <el-input
           id="correspondentAccount"
           v-model="formData.correspondentAccount"
           type="text"
           :class="{ 'error': errors.correspondentAccount }"
-          placeholder="Введите корреспондентский счет"
+          placeholder="Введите корреспондентский счёт"
           maxlength="20"
           @blur="validateField('correspondentAccount')"
           @input="errors.correspondentAccount = ''"
@@ -853,21 +997,21 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Юридический адрес банка -->
+      <!-- E-mail предпринимателя -->
       <div class="form__group">
-        <label for="bankLegalAddress" class="form__label button">Юридический адрес банка<span>*</span></label>
+        <label for="entrepreneurEmailIp" class="form__label button">E-mail предпринимателя<span>*</span></label>
         <el-input
-          id="bankLegalAddress"
-          v-model="formData.bankLegalAddress"
-          type="text"
-          :class="{ 'error': errors.bankLegalAddress }"
-          placeholder="Введите юридический адрес банка"
-          @blur="validateField('bankLegalAddress')"
-          @input="errors.bankLegalAddress = ''"
+          id="entrepreneurEmailIp"
+          v-model="formData.entrepreneurEmail"
+          type="email"
+          :class="{ 'error': errors.entrepreneurEmail }"
+          placeholder="name@example.ru"
+          @blur="validateField('entrepreneurEmail')"
+          @input="errors.entrepreneurEmail = ''"
           size="large"
         />
-        <div v-if="errors.bankLegalAddress" class="error text_very">
-          {{ errors.bankLegalAddress }}
+        <div v-if="errors.entrepreneurEmail" class="error text_very">
+          {{ errors.entrepreneurEmail }}
         </div>
       </div>
     </template>
@@ -912,60 +1056,6 @@ onUnmounted(() => {
         <div v-if="errors.otherCitizenship" class="error text_very">
           {{ errors.otherCitizenship }}
         </div>
-      </div>
-    </div>
-
-    <!-- Фамилия -->
-    <div class="form__group">
-      <label for="lastName" class="form__label button">Фамилия<span>*</span></label>
-      <el-input
-        id="lastName"
-        v-model="formData.lastName"
-        type="text"
-        :class="{ 'error': errors.lastName }"
-        placeholder="Введите фамилию"
-        @blur="validateField('lastName')"
-        @input="errors.lastName = ''"
-        size="large"
-      />
-      <div v-if="errors.lastName" class="error text_very">
-        {{ errors.lastName }}
-      </div>
-    </div>
-
-    <!-- Имя -->
-    <div class="form__group">
-      <label for="firstName" class="form__label button">Имя<span>*</span></label>
-      <el-input
-        id="firstName"
-        v-model="formData.firstName"
-        type="text"
-        :class="{ 'error': errors.firstName }"
-        placeholder="Введите имя"
-        @blur="validateField('firstName')"
-        @input="errors.firstName = ''"
-        size="large"
-      />
-      <div v-if="errors.firstName" class="error text_very">
-        {{ errors.firstName }}
-      </div>
-    </div>
-
-    <!-- Отчество -->
-    <div class="form__group">
-      <label for="middleName" class="form__label button">Отчество<span>*</span></label>
-      <el-input
-        id="middleName"
-        v-model="formData.middleName"
-        type="text"
-        :class="{ 'error': errors.middleName }"
-        placeholder="Введите отчество"
-        @blur="validateField('middleName')"
-        @input="errors.middleName = ''"
-        size="large"
-      />
-      <div v-if="errors.middleName" class="error text_very">
-        {{ errors.middleName }}
       </div>
     </div>
 

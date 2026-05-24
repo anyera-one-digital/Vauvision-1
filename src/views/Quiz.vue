@@ -38,14 +38,14 @@
               </li>
             </ul>
             <div class="quiz__preview_buttons">
-              <button 
+              <!-- <button 
                 v-if="hasSavedData"
                 class="quiz__restart_button button__red button" 
                 @click="restartFromBeginning"
                 :disabled="isRestarting"
               >
                 <span>{{ isRestarting ? 'Очистка данных...' : 'Сбросить' }}</span>
-              </button>
+              </button> -->
               <button class="quiz__preview_button button__black button" @click="showQuizForm"><span>Продолжить</span></button>
             </div>
           </div>
@@ -70,6 +70,11 @@ import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import QuizForm from "@/components/layout/QuizForm.vue";
 import { SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET } from "@/composables/labelArtistsMenu";
+import {
+  parsePaymentQueryParam,
+  paymentQueryNeedsNormalization,
+  type QuizPaymentReturnStatus,
+} from '@/utils/quizPaymentQuery';
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Tr from "@/i18n/translation";
@@ -84,24 +89,53 @@ const isRestarting = ref(false);
 const hasSavedData = ref(true);
 
 /** Возврат с оплаты на шаг 8 — показ PaymentStatus в QuizForm */
-const paymentReturnStatus = computed<'success' | 'error' | null>(() => {
-  const p = route.query.payment;
-  const v = Array.isArray(p) ? p[0] : p;
-  if (v === 'success' || v === 'error') return v;
-  return null;
-});
+const paymentReturnStatus = computed<QuizPaymentReturnStatus | null>(() =>
+  parsePaymentQueryParam(route.query.payment),
+);
+
+/** Чистый payment=success|error в адресной строке (без error?InvId=…). */
+const normalizePaymentQueryInUrl = async (): Promise<void> => {
+  const raw = route.query.payment;
+  if (!paymentQueryNeedsNormalization(raw)) return;
+
+  const status = parsePaymentQueryParam(raw);
+  if (!status) return;
+
+  const query = { ...route.query, payment: status };
+  await router.replace({ ...route, query });
+};
+
+/** Убирает параметры возврата с оплаты перед новым квизом. */
+const clearPaymentQueryFromUrl = async (): Promise<void> => {
+  if (!route.query.payment && !route.query.InvId) return;
+
+  const query = { ...route.query };
+  delete query.payment;
+  delete query.InvId;
+  await router.replace({ name: route.name ?? 'release', query });
+};
+
+const applyPaymentReturnScreen = (): void => {
+  if (!parsePaymentQueryParam(route.query.payment)) return;
+  showForm.value = true;
+  currentStep.value = 8;
+};
 
 /** Прямой заход на экран статуса оплаты: /release?payment=success|error */
 watch(
   () => route.query.payment,
-  (p) => {
-    const v = Array.isArray(p) ? p[0] : p;
-    if (v === 'success' || v === 'error') {
-      showForm.value = true;
-      currentStep.value = 8;
+  async (p) => {
+    const status = parsePaymentQueryParam(p);
+    if (!status) return;
+
+    if (paymentQueryNeedsNormalization(p)) {
+      await normalizePaymentQueryInUrl();
+      return;
     }
+
+    applyPaymentReturnScreen();
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 // Проверка наличия сохранений в IndexedDB
@@ -182,6 +216,7 @@ const showQuizForm = async () => {
   } catch {
     /* без сети / ошибка проверки — не блокируем оформление */
   }
+  await clearPaymentQueryFromUrl();
   showForm.value = true;
 };
 

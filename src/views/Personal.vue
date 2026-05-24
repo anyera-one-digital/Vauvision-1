@@ -16,7 +16,7 @@
     <div v-else class="personal__block">
       <div class="personal__balance">
         <div class="personal__balance_info">
-          <h3 class="personal__balance_head">ЛИЧНЫЙ КАБИНЕТ {{ personalHeadDisplayName }}</h3>
+          <h3 class="personal__balance_head">ЛИЧНЫЙ КАБИНЕТ <span class="personal__balance_head_name">{{ personalHeadDisplayName }}</span></h3>
           <p v-if="viewingArtistBanner" class="personal__artist_banner text_small">{{ viewingArtistBanner }}</p>
         </div>
         <div class="personal__divider"></div>
@@ -35,8 +35,6 @@
             <button 
               class="personal__balance_button button__primary"
               @click="openPayoutAmountPopup"
-              :disabled="profileData.balance < minPayoutAmount"
-              :class="{ 'button__disabled': profileData.balance < minPayoutAmount }"
             >
               <span>Запросить выплаты</span>
             </button>
@@ -413,6 +411,9 @@
                 </div>
               </li>
             </ul>
+            <div v-if="paginatedTransactions.length === 0 && !isLoadingTransactions" class="personal__transactions_empty">
+              <p class="personal__transactions_empty_text">Нет доступных транзакций</p>
+            </div>
             <div class="pagination__buttons" v-if="showTransactionsPagination">
               <button 
                 class="pagination__buttons_button button button__pagination button__pagination_prev"
@@ -685,14 +686,37 @@
         </div>
         
         <div class="popup__form-group">
-          <p class="popup__info-message">
+          <p v-if="!isCommissionNoticeVisible" class="popup__info-message">
             Будет запрошена выплата на сумму {{ profileData.balance.toLocaleString() }} {{ profileData.currencySymbol }}
           </p>
+          <div v-if="isCommissionNoticeVisible" class="popup__commission-block">
+            <p class="popup__commission-text">
+              На выплаты свыше 20 000 мы берём комиссию в 5% от суммы для покрытия издержек на банковские транзакции физлицам. Рекомендуем вам открыть ИП и обновить реквизиты.
+            </p>
+            <div class="popup__actions popup__actions_two_buttons popup__commission-actions">
+              <button
+                class="popup__button button button__black"
+                @click="goToBankRequisitesSettings"
+                :disabled="isRequestingAct"
+              >
+                <span>Сменить реквизиты</span>
+              </button>
+              <button
+                class="popup__button button button__primary"
+                @click="requestPayoutAct"
+                :disabled="isRequestingAct"
+              >
+                <span v-if="!isRequestingAct">Вывести с комиссией</span>
+                <span v-else>Запрос...</span>
+              </button>
+            </div>
+          </div>
           <p v-if="actError" class="popup__error-message">{{ actError }}</p>
         </div>
         
         <div class="popup__actions">
           <button 
+            v-if="!isCommissionNoticeVisible"
             class="popup__button button button__primary"
             @click="requestPayoutAct"
             :disabled="isRequestingAct"
@@ -725,17 +749,22 @@
         <p class="popup__images-info">Акт успешно создан. Просмотрите изображения:</p>
         
         <div class="popup__images-grid" v-if="actData.images && actData.images.length > 0">
-          <div 
-            v-for="(image, index) in actData.images" 
+          <a
+            v-for="(image, index) in actData.images"
             :key="index"
+            :href="getFullUrl(image)"
             class="popup__image-item"
+            target="_blank"
+            rel="noopener noreferrer"
+            :aria-label="`Открыть изображение акта ${index + 1} в новой вкладке`"
           >
-            <img 
-              :src="getFullUrl(image)" 
+            <img
+              :src="getFullUrl(image)"
               :alt="`Изображение ${index + 1}`"
               class="popup__image"
             >
-          </div>
+            <span class="popup__image-hint">Нажмите на картинку для полноэкранного просмотра в новой вкладке</span>
+          </a>
         </div>
         
         <div v-else class="popup__empty">
@@ -846,32 +875,12 @@ import ButtonSVG from "@/uikit/icon/ButtonSVG.vue";
 import Tr from "@/i18n/translation"
 import SignaturePopup from "@/components/layout/Signature.vue";
 import {
+  isLabelOwner,
+  labelArtists,
   labelCabinetPseudonym,
   registerLabelArtistsExternalRefresh,
   syncLabelMenuFromGetDataResponse,
 } from "@/composables/labelArtistsMenu";
-
-interface LabelArtistRow {
-  id: string;
-  pseudonym: string;
-}
-
-function mapProfileGroupMembersToArtists(members: unknown): LabelArtistRow[] {
-  if (!Array.isArray(members)) return [];
-  const out: LabelArtistRow[] = [];
-  for (const raw of members) {
-    const m = raw as Record<string, unknown>;
-    const id = m.ID ?? m.id;
-    if (id == null || id === "") continue;
-    const login = String(m.LOGIN ?? m.login ?? "").trim();
-    const name = String(m.NAME ?? m.name ?? "").trim();
-    const lastName = String(m.LAST_NAME ?? m.lastName ?? "").trim();
-    const pseudonym =
-      login || [name, lastName].filter(Boolean).join(" ").trim() || "Артист";
-    out.push({ id: String(id), pseudonym });
-  }
-  return out;
-}
 
 const loading = ref<boolean>(true);
 const loadingSvg = `
@@ -1008,11 +1017,49 @@ const personalHeadDisplayName = computed(() => {
 });
 const route = useRoute();
 const router = useRouter();
-const labelArtistsFromProfile = ref<LabelArtistRow[]>([]);
+
+// ========================= TEMP QA PAYOUT BLOCK START =========================
+// Временный QA-режим для ручной проверки состояний попапа выплат через query-параметры.
+// Примеры:
+// ?qaPayout=1&qaBalance=25000&qaIp=0
+// ?qaPayout=1&qaBalance=25000&qaIp=1
+// Удаляется целиком вместе с блоком между START/END комментариями.
+const qaPayoutModeEnabled = computed(() => route.query.qaPayout === '1');
+
+const parseQaNumber = (value: unknown): number | null => {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const applyQaPayoutOverrides = () => {
+  if (!qaPayoutModeEnabled.value) return;
+
+  const qaBalance = parseQaNumber(route.query.qaBalance);
+  if (qaBalance !== null) {
+    profileData.value.balance = qaBalance;
+  }
+
+  const qaIp = route.query.qaIp;
+  if (qaIp === '1') {
+    hasEntrepreneurRequisites.value = true;
+  } else if (qaIp === '0') {
+    hasEntrepreneurRequisites.value = false;
+  }
+
+  if (!showPayoutAmountPopup.value) {
+    payoutAmount.value = profileData.value.balance;
+    actError.value = '';
+    showPayoutAmountPopup.value = true;
+    document.documentElement.classList.add('noscroll');
+  }
+};
+// ========================== TEMP QA PAYOUT BLOCK END ==========================
+
 const viewingArtistBanner = computed(() => {
   const id = route.query.artist;
   if (!id || typeof id !== 'string') return '';
-  const fromApi = labelArtistsFromProfile.value.find((a) => a.id === id);
+  const fromApi = labelArtists.value.find((a) => a.id === id);
   return fromApi ? `Просмотр кабинета артиста: ${fromApi.pseudonym}` : "";
 });
 const showReportButton = ref(false);
@@ -1026,7 +1073,7 @@ const showPayoutAmountPopup = ref(false);
 const showImagesPopup = ref(false);
 const showNoReportsPopup = ref(false);
 const actData = ref<ActResponse | null>(null);
-const userLabel = ref(0);
+const userLabel = computed(() => (isLabelOwner.value ? 1 : 0));
 const isoldsumm = ref("0");
 const showConfirmReportPopup = ref(false);
 
@@ -1036,6 +1083,7 @@ const actError = ref('');
 
 const isSubmittingVyplata = ref(false);
 const vyplataError = ref('');
+const hasEntrepreneurRequisites = ref(false);
 
 const availableQuarters = ref<Quarter[]>([]);
 
@@ -1148,6 +1196,10 @@ const isBonusAmountValid = computed(() => {
 
 const minPayoutAmount = computed(() => {
   return isoldsumm.value === "1" ? 1000 : 5000;
+});
+
+const isCommissionNoticeVisible = computed(() => {
+  return Number(profileData.value.balance || 0) > 20000 && !hasEntrepreneurRequisites.value;
 });
 
 const isPayoutAmountValid = computed(() => {
@@ -1666,6 +1718,7 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
     }
 
     isoldsumm.value = (data.isoldsumm as string) || "0";
+    hasEntrepreneurRequisites.value = false;
 
     const user = data.user as Record<string, unknown> | undefined;
     if (user) {
@@ -1674,7 +1727,6 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
 
     if (data.profile) {
       const prof = data.profile as Record<string, unknown>;
-      const uf = user?.uf as Record<string, unknown> | undefined;
       profileData.value.balance = (prof.balance as number) || 0;
       profileData.value.bonus = (prof.bonus as number) || 0;
       profileData.value.region = (prof.region as string) || 'Russia';
@@ -1685,17 +1737,25 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
         (prof.currencySymbol as string) ||
         (profileData.value.region === 'Russia' ? '₽' : '$');
       showReportButton.value = !!prof.showReportButton;
-      /* getData: isLabel <=> UF_LEBL; в profile нет ufLable */
-      userLabel.value =
-        prof.isLabel === true ||
-        uf?.UF_LEBL === 1 ||
-        uf?.UF_LEBL === "1"
-          ? 1
-          : 0;
-      labelArtistsFromProfile.value = mapProfileGroupMembersToArtists(
-        prof.groupMembers
+    }
+
+    const settings = data.settings as Record<string, unknown> | undefined;
+    const requisites = settings?.requisites as Record<string, unknown> | undefined;
+    const entrepreneur = requisites?.entrepreneur as Record<string, unknown> | undefined;
+    if (entrepreneur) {
+      const entrepreneurFields = [
+        entrepreneur.fullName,
+        entrepreneur.ogrnip,
+        entrepreneur.inn,
+        entrepreneur.account,
+        entrepreneur.bankName,
+      ];
+      hasEntrepreneurRequisites.value = entrepreneurFields.some((field) =>
+        String(field ?? '').trim().length > 0
       );
     }
+
+    applyQaPayoutOverrides();
 
     syncLabelMenuFromGetDataResponse(data);
 
@@ -1906,6 +1966,18 @@ const openPayoutAmountPopup = () => {
   document.documentElement.classList.add('noscroll');
 };
 
+const goToBankRequisitesSettings = () => {
+  closeAllPopups();
+  const settingsRoute = Tr.i18nRoute({ name: 'setting' });
+  const normalized =
+    typeof settingsRoute === 'string' ? { path: settingsRoute } : settingsRoute;
+
+  router.push({
+    ...normalized,
+    hash: '#settings-bank-requisites'
+  });
+};
+
 const requestPayoutAct = async () => {
   if (!isPayoutAmountValid.value) {
     actError.value = `Сумма должна быть от ${minPayoutAmount.value} до ${profileData.value.balance} ${profileData.value.currencySymbol}`;
@@ -2003,15 +2075,21 @@ const submitSignature = async (signatureDataUrl: string) => {
   if (!actData.value) return;
 
   try {
-    const response = await fetch(signatureDataUrl);
-    const blob = await response.blob();
-    
-    const fileName = `${actData.value.element_id}.png`;
-    const signatureFile = new File([blob], fileName, { type: 'image/png' });
+    const elementId = String(actData.value.element_id || '').trim();
+    if (!elementId) {
+      throw new Error('Не найден id договора для отправки подписи');
+    }
+    if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(signatureDataUrl)) {
+      throw new Error('Подпись имеет неверный формат. Подпишите договор ещё раз');
+    }
 
     const formData = new FormData();
-    formData.append('name', actData.value.element_id);
-    formData.append('signature', signatureFile); 
+    // Для совместимости с разными версиями обработчика передаем все ожидаемые имена.
+    formData.append('name', elementId);
+    formData.append('id', elementId);
+    formData.append('element_id', elementId);
+    // Бэкенд ожидает URL/строку подписи, а не бинарный файл.
+    formData.append('signature', signatureDataUrl);
 
     const submitResponse = await fetch('/ajax_vue/ajax/newAkt_vyp.php', {
       method: 'POST',
@@ -2024,10 +2102,21 @@ const submitSignature = async (signatureDataUrl: string) => {
         throw new Error(`HTTP error! status: ${submitResponse.status}`);
     }
 
-    const result = await submitResponse.json();
+    const responseText = await submitResponse.text();
+    let result: { error?: number | string | boolean; message?: string } | null = null;
+    try {
+      result = JSON.parse(responseText) as { error?: number | string | boolean; message?: string };
+    } catch {
+      const trimmedText = responseText.trim();
+      if (trimmedText) {
+        throw new Error(trimmedText);
+      }
+      throw new Error('Сервер вернул пустой ответ при отправке подписи');
+    }
+
     console.log('Ответ при отправке подписи:', result);
 
-    if (result && result.error) {
+    if (result && Number(result.error) !== 0) {
       throw new Error(result.message || 'Ошибка при отправке подписи');
     }
 
@@ -2396,6 +2485,10 @@ onUnmounted(() => {
     @media (max-width: 767px) {
       padding: 30px 15px 20px;
     }
+  }
+
+  &_head_name {
+    text-transform: none;
   }
 
   &_desc {
@@ -3501,6 +3594,20 @@ onUnmounted(() => {
   &_amountvalue {
     color: var(--text);
   }
+
+  &_empty {
+    text-align: center;
+    padding: 40px 20px;
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 10px;
+  }
+
+  &_empty_text {
+    color: var(--text-gray);
+    margin: 0;
+  }
 }
 
 .status {
@@ -3645,6 +3752,7 @@ onUnmounted(() => {
     li {
       margin-bottom: 6px;
       font-size: 14px;
+      text-align: left;
       &:last-child {
         margin-bottom: 0;
       }
@@ -3663,6 +3771,27 @@ onUnmounted(() => {
     color: var(--text);
     text-align: center;
     font-weight: 500;
+  }
+
+  &__commission-block {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid #f0b429;
+    border-radius: 8px;
+    background: #fff8e6;
+  }
+
+  &__commission-text {
+    margin: 0;
+    color: #5c4300;
+    font-weight: 600;
+    line-height: 1.45;
+    text-align: left;
+  }
+
+  &__commission-actions {
+    margin-top: 16px;
+    margin-bottom: 4px;
   }
 
   &__years,
@@ -3807,15 +3936,26 @@ onUnmounted(() => {
     position: relative;
     border: 1px solid var(--border);
     border-radius: 4px;
-    overflow: hidden;
-    aspect-ratio: 1 / 1;
+    display: block;
     cursor: pointer;
+    text-decoration: none;
+    background-color: var(--bg);
   }
 
   &__image {
     width: 100%;
     height: auto;
+    display: block;
     object-fit: contain;
+  }
+
+  &__image-hint {
+    display: block;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-gray);
+    border-top: 1px solid var(--border);
   }
 
   &__year-select {

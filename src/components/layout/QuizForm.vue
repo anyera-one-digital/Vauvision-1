@@ -84,7 +84,8 @@ const loadPaymentRetryLinks = () => {
 watch(
   () => [props.currentStep, props.paymentReturnStatus] as const,
   ([step, st]) => {
-    if (step === 8 && (st === "success" || st === "error")) loadPaymentRetryLinks();
+    if (step === 8 && (st === "success" || st === "error"))
+      loadPaymentRetryLinks();
   },
   { immediate: true },
 );
@@ -381,7 +382,10 @@ defineExpose({
 
     <!-- Шаг 8: возврат с оплаты -->
     <PaymentStatus
-      v-if="currentStep === 8 && (paymentReturnStatus === 'success' || paymentReturnStatus === 'error')"
+      v-if="
+        currentStep === 8 &&
+        (paymentReturnStatus === 'success' || paymentReturnStatus === 'error')
+      "
       :status="paymentReturnStatus!"
       :usdt-payment-url="paymentRetryUsdt || undefined"
       :card-payment-url="paymentRetryCard || undefined"
@@ -389,7 +393,11 @@ defineExpose({
 
     <!-- Шаг 8: оформление / выбор оплаты в ЛК -->
     <Quiz8
-      v-if="currentStep === 8 && paymentReturnStatus !== 'success' && paymentReturnStatus !== 'error'"
+      v-if="
+        currentStep === 8 &&
+        paymentReturnStatus !== 'success' &&
+        paymentReturnStatus !== 'error'
+      "
       @go-back="handleGoBack"
       @finish="handleFinish"
     />

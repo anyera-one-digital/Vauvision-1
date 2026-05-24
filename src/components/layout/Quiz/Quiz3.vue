@@ -7,6 +7,11 @@ import CloseSVG from "@/uikit/icon/CloseSVG.vue";
 import ClipSVG from "@/uikit/icon/ClipSVG.vue";
 import dayjs from 'dayjs';
 import { openDB } from 'idb';
+import {
+  normalizeQuizUrl,
+  validateContractSocialLink,
+  getContractSocialLinkErrorMessage,
+} from '@/utils/quizSocialUrls';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -354,7 +359,7 @@ const isReadyForNextStep = computed(() => {
     formData.releaseDate?.trim() || '',
     formData.hasProfanity?.trim() || '',
     formData.coverFile !== null,
-    formData.vkLink?.trim() || '',
+    validateContractSocialLink(formData.vkLink, profile.value.region).ok,
     formData.email?.trim() || ''
   ];
   
@@ -369,29 +374,11 @@ const isReadyForNextStep = computed(() => {
   return requiredFields.every(Boolean);
 });
 
-// Валидация URL
-const isValidUrl = (url: string) => {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
+const handleVkLinkBlur = () => {
+  if (formData.vkLink.trim()) {
+    formData.vkLink = normalizeQuizUrl(formData.vkLink);
   }
-};
-
-// Валидация ссылки на соцсеть в зависимости от региона
-const isValidSocialLink = (url: string, region: string) => {
-  try {
-    new URL(url);
-    
-    if (region === 'Russia') {
-      return url.includes('vk.com/') || url.includes('vk.ru/');
-    } else {
-      return url.includes('instagram.com/') || url.includes('telegram.org/');
-    }
-  } catch {
-    return false;
-  }
+  validateForm();
 };
 
 // Валидация email
@@ -462,17 +449,16 @@ const validateForm = () => {
     isValid = false;
   }
   
-  if (!formData.vkLink?.trim()) {
-    errors.vkLink = 'Ссылка на страницу обязательна для заполнения';
-    isValid = false;
-  } else if (!isValidUrl(formData.vkLink)) {
-    errors.vkLink = 'Введите корректную ссылку (начинается с https://)';
-    isValid = false;
-  } else if (!isValidSocialLink(formData.vkLink, profile.value.region)) {
-    const expected = profile.value.region === 'Russia' 
-      ? 'VK (vk.com или vk.ru)' 
-      : 'Instagram (instagram.com) или Telegram (telegram.org)';
-    errors.vkLink = `Ссылка должна вести на ${expected}`;
+  if (formData.vkLink.trim()) {
+    formData.vkLink = normalizeQuizUrl(formData.vkLink);
+  }
+
+  const vkLinkValidation = validateContractSocialLink(formData.vkLink, profile.value.region);
+  if (!vkLinkValidation.ok) {
+    errors.vkLink = getContractSocialLinkErrorMessage(
+      vkLinkValidation.error,
+      profile.value.region,
+    );
     isValid = false;
   }
   
@@ -1015,11 +1001,11 @@ onUnmounted(() => {
         </label>
         <p class="form__hint text_small">
           <template v-if="profile.region === 'Russia'">
-            Не указывайте ссылку на ваш паблик – только на личную страницу. Ссылка должна быть кликабельная в формате <a href="https://vk.com/" target="_blank" rel="noopener noreferrer">https://vk.com/</a>.
+            Не указывайте ссылку на ваш паблик – только на личную страницу. Пример: <a href="https://vk.com/" target="_blank" rel="noopener noreferrer">vk.com/username</a>.
           </template>
           <template v-else>
-            Не указывайте ссылку на ваш паблик – только на личную страницу. Ссылка должна быть кликабельная в формате <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">Instagram</a> или 
-            <a href="https://telegram.org" target="_blank" rel="noopener noreferrer">Telegram</a>.
+            Не указывайте ссылку на ваш паблик – только на личную страницу. Пример: <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">instagram.com/username</a> или
+            <a href="https://t.me" target="_blank" rel="noopener noreferrer">t.me/username</a>.
           </template>
         </p>
         <el-input
@@ -1028,10 +1014,10 @@ onUnmounted(() => {
           type="text"
           :class="{ 'error': errors.vkLink }"
           :placeholder="profile.region === 'Russia' ? 
-            'https://vk.com/username или https://vk.ru/username' : 
-            'https://instagram.com/username или https://telegram.org/username'"
+            'vk.com/username или vk.ru/username' : 
+            'instagram.com/username или t.me/username'"
           :disabled="isUploading"
-          @blur="validateForm"
+          @blur="handleVkLinkBlur"
           @input="errors.vkLink = ''"
           size="large"
         />
@@ -1102,6 +1088,9 @@ onUnmounted(() => {
     </li>
     <li class="quiz__important_item">
       <p class="quiz__important_description">Также приглашаем изучить рекомендации (носящие обязательный характер) от <a href="https://artists.apple.com/ru-ru/support/1120-cover-art" target="_blank">Apple Music</a></p>
+    </li>
+    <li class="quiz__important_item">
+      <p class="quiz__important_description">Для редактирования размера обложки <a href="https://vauvision.com/photos" target="_blank" rel="noopener noreferrer">используйте сайт</a> на вкладке «Обложка»</p>
     </li>
   </ul>
   <div class="quiz__form_bottom">

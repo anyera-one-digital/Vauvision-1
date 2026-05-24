@@ -114,6 +114,7 @@ interface ContractData {
   doc_pdf: string;
   doc_docx: string;
   images: string[];
+  element_id?: string;
 }
 
 // Ключи для хранения
@@ -204,7 +205,8 @@ const saveStateToDB = async () => {
       contractData: contractData.value ? {
         doc_pdf: String(contractData.value.doc_pdf),
         doc_docx: String(contractData.value.doc_docx),
-        images: Array.isArray(contractData.value.images) ? [...contractData.value.images] : []
+        images: Array.isArray(contractData.value.images) ? [...contractData.value.images] : [],
+        element_id: String(contractData.value.element_id || ''),
       } : null,
       signature: formData.signature || null,
       timestamp: Date.now()
@@ -369,6 +371,11 @@ const closeSignaturePopup = () => {
 };
 
 const handleSignatureSubmit = async (signatureData: string) => {
+  if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(signatureData)) {
+    ElMessage.error('Некорректный формат подписи. Подпишите договор ещё раз.');
+    return;
+  }
+
   console.log('Подпись получена в Quiz7, длина:', signatureData.length);
   
   // Сохраняем подпись в состоянии
@@ -382,7 +389,8 @@ const handleSignatureSubmit = async (signatureData: string) => {
     contract: contractData.value ? {
       doc_pdf: contractData.value.doc_pdf,
       doc_docx: contractData.value.doc_docx,
-      images: [...contractData.value.images]
+      images: [...contractData.value.images],
+      element_id: String(contractData.value.element_id || ''),
     } : null,
     formData: {
       acceptTerms: formData.acceptTerms,

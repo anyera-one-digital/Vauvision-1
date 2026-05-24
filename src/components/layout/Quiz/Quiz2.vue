@@ -772,6 +772,7 @@ interface AlbumTrack {
   rightsType: string;
   rightsContractLink: string;
   additionalInfo: string;
+  product_id?: string;
 }
 
 interface SingleTrack {
@@ -789,6 +790,7 @@ interface SingleTrack {
   rightsType: string;
   rightsContractLink: string;
   additionalInfo: string;
+  product_id?: string;
 }
 
 const singleErrors = ref<Array<{
@@ -1020,27 +1022,55 @@ const getCountsFromQuiz1 = async () => {
 const saveStateToDB = async () => {
   await safeDBOperation(
     async () => {
+      let prevState: any = null;
+      try {
+        prevState = await quizDB.value.get(STORE_NAME, STORAGE_KEY);
+      } catch {
+        prevState = null;
+      }
+
+      const productIdForSingle = (track: SingleTrack): string | undefined => {
+        if (track.product_id) return track.product_id;
+        const old = prevState?.singleTracks?.find((t: { id?: string }) => t?.id === track.id);
+        return old?.product_id;
+      };
+
+      const productIdForAlbumTrack = (
+        album: { id: string; tracks: AlbumTrack[] },
+        track: AlbumTrack,
+      ): string | undefined => {
+        if (track.product_id) return track.product_id;
+        const oldAlbum = prevState?.albums?.find((a: { id?: string }) => a?.id === album.id);
+        const oldTrack = oldAlbum?.tracks?.find((t: { id?: string }) => t?.id === track.id);
+        return oldTrack?.product_id;
+      };
+
       const stateToSave: any = {
         id: STORAGE_KEY,
         timestamp: Date.now()
       };
       
       if (singleCountFromQuiz1.value > 0) {
-        stateToSave.singleTracks = singleTracks.value.map(track => ({
-          id: track.id,
-          performerName: track.performerName,
-          musicAuthor: track.musicAuthor,
-          textAuthor: track.textAuthor,
-          trackName: track.trackName,
-          audioFileName: track.audioFileName || '',
-          audioFileSize: track.audioFileSize || 0,
-          uploaded: track.uploaded || false,
-          hasAudioUploaded: track.hasAudioUploaded || false,
-          audioFileId: track.audioFileId || null,
-          rightsType: track.rightsType || '',
-          rightsContractLink: track.rightsContractLink || '',
-          additionalInfo: track.additionalInfo || ''
-        }));
+        stateToSave.singleTracks = singleTracks.value.map(track => {
+          const product_id = productIdForSingle(track);
+          const row: Record<string, unknown> = {
+            id: track.id,
+            performerName: track.performerName,
+            musicAuthor: track.musicAuthor,
+            textAuthor: track.textAuthor,
+            trackName: track.trackName,
+            audioFileName: track.audioFileName || '',
+            audioFileSize: track.audioFileSize || 0,
+            uploaded: track.uploaded || false,
+            hasAudioUploaded: track.hasAudioUploaded || false,
+            audioFileId: track.audioFileId || null,
+            rightsType: track.rightsType || '',
+            rightsContractLink: track.rightsContractLink || '',
+            additionalInfo: track.additionalInfo || ''
+          };
+          if (product_id) row.product_id = product_id;
+          return row;
+        });
       }
       
       if (albumCountFromQuiz1.value > 0) {
@@ -1050,21 +1080,26 @@ const saveStateToDB = async () => {
           performerName: album.performerName,
           musicAuthor: album.musicAuthor,
           textAuthor: album.textAuthor,
-          tracks: album.tracks.map(track => ({
-            id: track.id,
-            trackNumber: track.trackNumber,
-            trackName: track.trackName,
-            performerName: track.performerName,
-            musicAuthor: track.musicAuthor,
-            textAuthor: track.textAuthor,
-            audioFileName: track.audioFileName || '',
-            audioFileSize: track.audioFileSize || 0,
-            uploaded: track.uploaded || false,
-            audioFileId: track.audioFileId || null,
-            rightsType: track.rightsType || '',
-            rightsContractLink: track.rightsContractLink || '',
-            additionalInfo: track.additionalInfo || ''
-          }))
+          tracks: album.tracks.map(track => {
+            const product_id = productIdForAlbumTrack(album, track);
+            const row: Record<string, unknown> = {
+              id: track.id,
+              trackNumber: track.trackNumber,
+              trackName: track.trackName,
+              performerName: track.performerName,
+              musicAuthor: track.musicAuthor,
+              textAuthor: track.textAuthor,
+              audioFileName: track.audioFileName || '',
+              audioFileSize: track.audioFileSize || 0,
+              uploaded: track.uploaded || false,
+              audioFileId: track.audioFileId || null,
+              rightsType: track.rightsType || '',
+              rightsContractLink: track.rightsContractLink || '',
+              additionalInfo: track.additionalInfo || ''
+            };
+            if (product_id) row.product_id = product_id;
+            return row;
+          })
         }));
       }
       
@@ -1098,7 +1133,7 @@ const loadSinglesFromStorage = async (savedState: any) => {
       }
       
       if (audioFile) {
-        loadedTracks.push({
+        const row: SingleTrack = {
           id: track.id,
           performerName: track.performerName || '',
           musicAuthor: track.musicAuthor || '',
@@ -1113,7 +1148,9 @@ const loadSinglesFromStorage = async (savedState: any) => {
           rightsType: track.rightsType || '',
           rightsContractLink: track.rightsContractLink || '',
           additionalInfo: track.additionalInfo || ''
-        });
+        };
+        if (track.product_id) row.product_id = track.product_id;
+        loadedTracks.push(row);
       }
     }
     singleTracks.value = loadedTracks;
@@ -1174,7 +1211,7 @@ const loadAlbumsFromStorage = async (savedState: any, requiredCount: number) => 
                 }
               }
               
-              return {
+              const row: AlbumTrack = {
                 id: track.id || `album-track-${Date.now()}-${trackIndex}-${Math.random()}`,
                 trackNumber: track.trackNumber || trackIndex + 1,
                 trackName: track.trackName || '',
@@ -1190,6 +1227,8 @@ const loadAlbumsFromStorage = async (savedState: any, requiredCount: number) => 
                 rightsContractLink: track.rightsContractLink || '',
                 additionalInfo: track.additionalInfo || ''
               };
+              if (track.product_id) row.product_id = track.product_id;
+              return row;
             })
           );
         }

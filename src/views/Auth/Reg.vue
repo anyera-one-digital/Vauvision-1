@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { View, Hide } from '@element-plus/icons-vue'
 import { sendRequest, setToken } from '@/utils/api';
 import { ElMessage } from 'element-plus';
@@ -78,6 +78,53 @@ const confirmPasswordVisible = ref(false)
 
 // Состояние загрузки
 const isLoading = ref(false)
+const isRegistrationCompleted = ref(false)
+const registeredEmail = ref('')
+const redirectCountdown = ref(60)
+let redirectTimer: number | null = null
+
+const clearRedirectTimer = () => {
+  if (redirectTimer !== null) {
+    window.clearInterval(redirectTimer)
+    redirectTimer = null
+  }
+}
+
+const goToLogin = () => {
+  clearRedirectTimer()
+  router.push('/login')
+}
+
+const startRedirectCountdown = () => {
+  clearRedirectTimer()
+  redirectCountdown.value = 60
+
+  redirectTimer = window.setInterval(() => {
+    if (redirectCountdown.value <= 1) {
+      clearRedirectTimer()
+      goToLogin()
+      return
+    }
+    redirectCountdown.value -= 1
+  }, 1000)
+}
+
+const enableRegistrationPreviewFromQuery = () => {
+  const urlParams = new URLSearchParams(window.location.search)
+  if (urlParams.get('regPreview') !== '1') {
+    return false
+  }
+
+  /*
+    TEMP-РЕЖИМ ПРЕДПРОСМОТРА: позволяет увидеть финальный экран регистрации без отправки формы.
+    Использование: /reg?regPreview=1
+    Можно безопасно удалить, когда предпросмотр больше не нужен.
+  */
+  isRegistrationCompleted.value = true
+  registeredEmail.value = 'preview@example.com'
+  startRedirectCountdown()
+  return true
+}
 
 // Валидация первой формы
 const validateForm = () => {
@@ -240,6 +287,10 @@ const goBackToSecondStep = () => {
 
 // Отправка всей формы
 const handleFinalSubmit = async () => {
+  if (isRegistrationCompleted.value) {
+    return
+  }
+
   if (!validateThirdForm()) {
     return
   }
@@ -280,40 +331,21 @@ const handleFinalSubmit = async () => {
   .then((response: any) => {
     console.log('Успешная регистрация:', response.data)
     
-    ElMessage({
-      message: 'Регистрация успешно завершена!',
-      type: 'success',
-    });
-    
     // Если сервер сразу возвращает токены
     if (response.data.access && response.data.refresh) {
       setToken(response.data.access, response.data.refresh)
     }
     
-    // Сброс всех данных
-    Object.assign(formData, {
-      firstName: '',
-      lastName: '',
-      referralCode: ''
-    })
-    Object.assign(secondFormData, {
-      userType: 'executor',
-      executorName: '',
-      labelName: ''
-    })
-    Object.assign(thirdFormData, {
-      email: '',
-      phone: '',
-      password: '',
-      confirmPassword: '',
-      personalData: false,
-      marketing: false,
-      policy: false
-    })
-    currentStep.value = 1
-    
-    // Редирект на страницу входа или в личный кабинет
-    router.push(Tr.i18nRoute({ name: 'login' }))
+    registeredEmail.value = thirdFormData.email.trim()
+    isRegistrationCompleted.value = true
+    startRedirectCountdown()
+
+    /*
+      LEGACY-ЛОГИКА (старый сценарий): мгновенный редирект после регистрации.
+      Оставлено как reference и может быть безопасно закомментировано/удалено при необходимости.
+      sessionStorage.setItem('registration_success', '1')
+      router.push(Tr.i18nRoute({ name: 'login' }))
+    */
   })
   .catch(error => {
     console.error('Ошибка при регистрации:', error)
@@ -420,7 +452,14 @@ const checkAuth = async () => {
 
 // Проверка авторизации при загрузке страницы
 onMounted(() => {
-  checkAuth()
+  const isPreviewMode = enableRegistrationPreviewFromQuery()
+  if (!isPreviewMode) {
+    checkAuth()
+  }
+})
+
+onUnmounted(() => {
+  clearRedirectTimer()
 })
 </script>
 
@@ -449,8 +488,29 @@ onMounted(() => {
             </RouterLink>
           </div>
 
+          <div v-if="isRegistrationCompleted" class="auth__form auth__success">
+            <div class="form__heading">
+              <h1 class="form__head title_two">Регистрация успешна!</h1>
+            </div>
+            <p class="form__description text_small">
+              Вы успешно зарегистрированы с email: <strong>{{ registeredEmail }}</strong>.
+              Обязательно подтвердите регистрацию с указанной почты перед авторизацией на сайте.
+            </p>
+            <p class="form__description text_small">
+              Автоматический переход к авторизации через {{ redirectCountdown }} сек.
+            </p>
+            <div class="form__buttons">
+              <button
+                class="form__send button__black button"
+                @click="goToLogin"
+              >
+                <span>Перейти к авторизации</span>
+              </button>
+            </div>
+          </div>
+
           <!-- Первая форма -->
-          <div v-if="currentStep === 1" class="auth__form">
+          <div v-else-if="currentStep === 1" class="auth__form">
             <div class="form__heading">
               <h1 class="form__head title_two">Регистрация</h1>
             </div>
@@ -566,10 +626,7 @@ onMounted(() => {
                 <p class="form__description text_very">
                   Пожалуйста, впишите именно ПСЕВДОНИМ АРТИСТА, 
                   под которым будут выкладываться релизы. 
-                  Если вы планируете публиковать релизы от 
-                  разных псевдонимов, то сделайте несколько 
-                  профилей из расчёта «1 профиль = 1 псевдоним», 
-                  либо аккаунт лейбла.
+                  
                 </p>
               </div>
 
@@ -792,7 +849,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="form__step">
+          <div v-if="!isRegistrationCompleted" class="form__step">
             <span :class="{ active: currentStep >= 1 }"></span>
             <span :class="{ active: currentStep >= 2 }"></span>
             <span :class="{ active: currentStep >= 3 }"></span>
@@ -856,6 +913,12 @@ onMounted(() => {
 .form__hint {
   color: var(--el-text-color-secondary);
   margin-bottom: 5px;
+}
+
+.auth__success {
+  .form__description {
+    margin-bottom: 10px;
+  }
 }
 
 .form__step {

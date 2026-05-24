@@ -210,8 +210,17 @@ onMounted(() => {
     width: calc(100% - 320px);
     margin: 0 0 0 auto;
     background-color: var(--bg);
-    border: 1px solid var(--border);
+    // border: 1px solid var(--border);
     padding: 40px;
+
+    @media (max-width: 1919px) {
+      width: calc(100% - 230px);
+    }
+
+    @media (max-width: 1439px) {
+      width: 100%;
+    }
+
 
     @media (max-width: 1439px) {
       width: 100%;

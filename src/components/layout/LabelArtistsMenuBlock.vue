@@ -5,8 +5,6 @@ import {
   showStandaloneAddArtist,
   artistsDropdownOpen,
   labelArtists,
-  apiIsLabel,
-  viewingArtistAsLabelManager,
   bitrixUserId,
   labelCabinetPseudonym,
   addArtistModalOpen,
@@ -14,6 +12,7 @@ import {
   addArtistError,
   addArtistSubmitting,
   artistCabinetSwitching,
+  canAddArtistFromMenu,
   artistsRootRef,
   toggleArtistsDropdown,
   openArtistCabinet,
@@ -99,7 +98,7 @@ onUnmounted(() => {
               </li>
             </ul>
             <button
-              v-if="apiIsLabel || viewingArtistAsLabelManager"
+              v-if="canAddArtistFromMenu"
               type="button"
               class="menu__artists_add"
               @click="openAddArtistModal"

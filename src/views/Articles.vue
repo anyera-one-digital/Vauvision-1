@@ -209,6 +209,15 @@ onMounted(() => {
 
 .personal {
   margin: 0 0 auto;
+  &__block {
+    @media (max-width: 1919px) {
+      width: calc(100% - 230px);
+    }
+
+    @media (max-width: 1439px) {
+      width: 100%;
+    }
+  }
 }
 
 .articles {

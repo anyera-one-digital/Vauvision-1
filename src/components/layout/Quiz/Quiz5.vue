@@ -5,6 +5,9 @@ import ClipSVG from "@/uikit/icon/ClipSVG.vue";
 import CloseSVG from "@/uikit/icon/CloseSVG.vue";
 import { ElInput, ElSelect, ElOption, ElMessage } from 'element-plus';
 import { openDB } from 'idb';
+import {
+  normalizeCommaSeparatedUrls,
+} from '@/utils/quizSocialUrls';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -17,7 +20,7 @@ interface FormData {
   appleMusicTextFile: File | null;
   hasDrugsMention: string;
   drugsTracks: string;
-  karaokeFile: File | null;
+  karaokeFile: File[];
   appleMusicLinks: string;
   spotifyLinks: string;
   vkLinks: string;
@@ -64,7 +67,7 @@ const formData = ref<FormData>({
   appleMusicTextFile: null,
   hasDrugsMention: '',
   drugsTracks: '',
-  karaokeFile: null,
+  karaokeFile: [],
   appleMusicLinks: '',
   spotifyLinks: '',
   vkLinks: '',
@@ -102,9 +105,7 @@ const drugsOptions = [
 const appleMusicFileName = ref('');
 const appleMusicFileSize = ref(0);
 const appleMusicFileId = ref<string | null>(null);
-const karaokeFileName = ref('');
-const karaokeFileSize = ref(0);
-const karaokeFileId = ref<string | null>(null);
+const karaokeFilesInfo = ref<Array<{ name: string; size: number; fileId: string }>>([]);
 
 // Инициализация IndexedDB
 const initDB = async () => {
@@ -262,11 +263,12 @@ const saveStateToDB = async () => {
           size: appleMusicFileSize.value,
           fileId: appleMusicFileId.value
         } : null,
-        karaokeFileInfo: karaokeFileId.value ? {
-          name: karaokeFileName.value,
-          size: karaokeFileSize.value,
-          fileId: karaokeFileId.value
+        karaokeFileInfo: karaokeFilesInfo.value.length > 0 ? {
+          name: karaokeFilesInfo.value[0].name,
+          size: karaokeFilesInfo.value[0].size,
+          fileId: karaokeFilesInfo.value[0].fileId
         } : null,
+        karaokeFilesInfo: karaokeFilesInfo.value.length > 0 ? [...karaokeFilesInfo.value] : null,
         timestamp: Date.now()
       };
       
@@ -325,21 +327,32 @@ const loadStateFromDB = async () => {
           }
         }
         
-        // Восстанавливаем Karaoke файл
-        if (savedState.karaokeFileInfo) {
-          const fileInfo = savedState.karaokeFileInfo;
-          karaokeFileName.value = fileInfo.name || '';
-          karaokeFileSize.value = fileInfo.size || 0;
-          karaokeFileId.value = fileInfo.fileId || null;
-          
-          if (karaokeFileId.value && filesDBInitialized.value) {
-            const fileData = await loadFileFromDB(karaokeFileId.value);
+        // Восстанавливаем Karaoke файлы (новый формат + обратная совместимость)
+        const savedKaraokeFiles = Array.isArray(savedState.karaokeFilesInfo)
+          ? savedState.karaokeFilesInfo
+          : savedState.karaokeFileInfo
+            ? [savedState.karaokeFileInfo]
+            : [];
+
+        formData.value.karaokeFile = [];
+        karaokeFilesInfo.value = [];
+
+        if (savedKaraokeFiles.length > 0 && filesDBInitialized.value) {
+          for (const savedFileInfo of savedKaraokeFiles) {
+            if (!savedFileInfo?.fileId) continue;
+            const fileData = await loadFileFromDB(savedFileInfo.fileId);
             if (fileData) {
-              formData.value.karaokeFile = fileData.file;
-              karaokeFileName.value = fileData.fileName;
-              karaokeFileSize.value = fileData.fileSize;
-              console.log('Quiz5: Karaoke file loaded');
+              formData.value.karaokeFile.push(fileData.file);
+              karaokeFilesInfo.value.push({
+                name: fileData.fileName,
+                size: fileData.fileSize,
+                fileId: savedFileInfo.fileId
+              });
             }
+          }
+
+          if (karaokeFilesInfo.value.length > 0) {
+            console.log(`Quiz5: Loaded karaoke files: ${karaokeFilesInfo.value.length}`);
           }
         }
       }
@@ -374,10 +387,9 @@ const isContinueButtonEnabled = computed(() => {
   // 4. Ссылки на соцсети (обязательное поле)
   if (!formData.value.socialLinks.trim()) return false;
   
-  const socialLinks = formData.value.socialLinks.split(',').map(s => s.trim());
-  const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/;
-  const hasInvalidSocialLink = socialLinks.some(link => !urlPattern.test(link));
-  if (hasInvalidSocialLink) return false;
+  // Временное отключение URL-валидации соцсетей.
+  // Если понадобится вернуть проверку, раскомментируйте строку ниже:
+  // if (!areAllQuizSocialUrlsValid(formData.value.socialLinks)) return false;
   
   // 5. Проверка секунд для TikTok (если заполнено)
   if (formData.value.tiktokStartSeconds.trim()) {
@@ -398,17 +410,20 @@ const isContinueButtonEnabled = computed(() => {
     if (formData.value.appleMusicTextFile.size > 10 * 1024 * 1024) return false;
   }
   
-  if (formData.value.karaokeFile) {
+  if (formData.value.karaokeFile.length > 0) {
     const allowedExtensions = ['.ttml'];
-    const fileName = formData.value.karaokeFile.name.toLowerCase();
-    const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-    if (!isValidExtension) return false;
-    if (formData.value.karaokeFile.size > 10 * 1024 * 1024) return false;
+    const hasInvalidFile = formData.value.karaokeFile.some(file => {
+      const fileName = file.name.toLowerCase();
+      const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+      return !isValidExtension || file.size > 10 * 1024 * 1024;
+    });
+
+    if (hasInvalidFile) return false;
   }
   
   // 7. Проверка консистентности файлов
   const hasAppleMusicFile = !!formData.value.appleMusicTextFile;
-  const hasKaraokeFile = !!formData.value.karaokeFile;
+  const hasKaraokeFile = formData.value.karaokeFile.length > 0;
   if ((hasAppleMusicFile && !hasKaraokeFile) || (!hasAppleMusicFile && hasKaraokeFile)) {
     return false;
   }
@@ -519,19 +534,19 @@ const validateField = (fieldName: keyof FormData) => {
       break;
 
     case 'socialLinks':
-      if (!formData.value.socialLinks.trim()) {
-        errors.value.socialLinks = 'Укажите ссылки на соцсети';
-      } else {
-        const links = formData.value.socialLinks.split(',').map(s => s.trim());
-        const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/;
-        const hasInvalidLink = links.some(link => !urlPattern.test(link));
-        
-        if (hasInvalidLink) {
-          errors.value.socialLinks = 'Укажите корректные ссылки на соцсети';
-        } else {
-          errors.value.socialLinks = '';
-        }
+      if (formData.value.socialLinks.trim()) {
+        formData.value.socialLinks = normalizeCommaSeparatedUrls(formData.value.socialLinks);
       }
+
+      // Временное отключение URL-валидации соцсетей.
+      // Если понадобится вернуть проверку, раскомментируйте блок ниже:
+      // {
+      //   const validationError = getSocialLinksValidationError(formData.value.socialLinks);
+      //   errors.value.socialLinks = validationError
+      //     ? getSocialLinksErrorMessage(validationError)
+      //     : '';
+      // }
+      errors.value.socialLinks = '';
       break;
   }
   
@@ -541,7 +556,7 @@ const validateField = (fieldName: keyof FormData) => {
 
 const validateFileConsistency = () => {
   const hasAppleMusicFile = !!formData.value.appleMusicTextFile;
-  const hasKaraokeFile = !!formData.value.karaokeFile;
+  const hasKaraokeFile = formData.value.karaokeFile.length > 0;
   
   if ((hasAppleMusicFile && !hasKaraokeFile) || (!hasAppleMusicFile && hasKaraokeFile)) {
     errors.value.fileConsistency = 'Для добавления текста трека необходимо прикрепить оба файла: docx и ttml';
@@ -577,15 +592,19 @@ const validateForm = (): boolean => {
     errors.value.appleMusicTextFile = '';
   }
   
-  if (formData.value.karaokeFile) {
+  if (formData.value.karaokeFile.length > 0) {
     const allowedExtensions = ['.ttml'];
-    const fileName = formData.value.karaokeFile.name.toLowerCase();
-    const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-    
-    if (!isValidExtension) {
-      errors.value.karaokeFile = 'Неверный формат файла. Разрешены только файлы .ttml';
-    } else if (formData.value.karaokeFile.size > 10 * 1024 * 1024) {
-      errors.value.karaokeFile = 'Размер файла не должен превышать 10 МБ';
+    const invalidFile = formData.value.karaokeFile.find(file => {
+      const fileName = file.name.toLowerCase();
+      const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+      return !isValidExtension || file.size > 10 * 1024 * 1024;
+    });
+
+    if (invalidFile) {
+      const invalidExtension = !allowedExtensions.some(ext => invalidFile.name.toLowerCase().endsWith(ext));
+      errors.value.karaokeFile = invalidExtension
+        ? 'Неверный формат файла. Разрешены только файлы .ttml'
+        : 'Размер каждого файла не должен превышать 10 МБ';
     } else {
       errors.value.karaokeFile = '';
     }
@@ -616,6 +635,61 @@ const handleAppleMusicFileClick = () => {
 
 const handleKaraokeFileClick = () => {
   karaokeFileRef.value?.click();
+};
+
+const validateKaraokeFiles = (files: File[]): string => {
+  const allowedExtensions = ['.ttml'];
+
+  for (const file of files) {
+    const fileName = file.name.toLowerCase();
+    const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!isValidExtension) {
+      return 'Неверный формат файла. Разрешены только файлы .ttml';
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      return 'Размер каждого файла не должен превышать 10 МБ';
+    }
+  }
+
+  return '';
+};
+
+const replaceKaraokeFiles = async (files: File[]): Promise<boolean> => {
+  if (!filesDBInitialized.value) {
+    throw new Error('Files DB not initialized');
+  }
+
+  const validationError = validateKaraokeFiles(files);
+  if (validationError) {
+    errors.value.karaokeFile = validationError;
+    return false;
+  }
+
+  for (const fileInfo of karaokeFilesInfo.value) {
+    await removeFileFromDB(fileInfo.fileId);
+  }
+
+  const nextKaraokeFilesInfo: Array<{ name: string; size: number; fileId: string }> = [];
+
+  for (const file of files) {
+    const fileId = generateFileId('karaoke');
+    await saveFileToDB(file, fileId);
+    nextKaraokeFilesInfo.push({
+      name: file.name,
+      size: file.size,
+      fileId
+    });
+  }
+
+  formData.value.karaokeFile = files;
+  karaokeFilesInfo.value = nextKaraokeFilesInfo;
+  errors.value.karaokeFile = '';
+  validateField('karaokeFile');
+  validateFileConsistency();
+  await saveStateToDB();
+  return true;
 };
 
 const handleAppleMusicFileChange = async (event: Event) => {
@@ -655,32 +729,12 @@ const handleAppleMusicFileChange = async (event: Event) => {
 
 const handleKaraokeFileChange = async (event: Event) => {
   const input = event.target as HTMLInputElement;
-  if (input.files && input.files[0]) {
-    const file = input.files[0];
-    
+  if (input.files && input.files.length > 0) {
     try {
-      if (!filesDBInitialized.value) {
-        throw new Error('Files DB not initialized');
+      const uploaded = await replaceKaraokeFiles(Array.from(input.files));
+      if (uploaded) {
+        ElMessage.success('Файл успешно загружен');
       }
-      
-      const fileId = generateFileId('karaoke');
-      
-      if (karaokeFileId.value) {
-        await removeFileFromDB(karaokeFileId.value);
-      }
-      
-      await saveFileToDB(file, fileId);
-      
-      formData.value.karaokeFile = file;
-      karaokeFileName.value = file.name;
-      karaokeFileSize.value = file.size;
-      karaokeFileId.value = fileId;
-      
-      validateField('karaokeFile');
-      validateFileConsistency();
-      await saveStateToDB();
-      
-      ElMessage.success('Файл успешно загружен');
     } catch (error) {
       console.error('Quiz5: Error uploading file:', error);
       ElMessage.error('Ошибка при загрузке файла');
@@ -712,7 +766,8 @@ const handleDrop = async (event: DragEvent) => {
   event.preventDefault();
   
   if (event.dataTransfer?.files.length) {
-    const file = event.dataTransfer.files[0];
+    const droppedFiles = Array.from(event.dataTransfer.files);
+    const file = droppedFiles[0];
     const target = event.currentTarget as HTMLElement;
     
     if (target.classList.contains('apple-music-upload')) {
@@ -759,41 +814,17 @@ const handleDrop = async (event: DragEvent) => {
       
     } else if (target.classList.contains('karaoke-upload')) {
       karaokeDragOver.value = false;
-      const allowedExtensions = ['.ttml'];
-      const fileName = file.name.toLowerCase();
-      const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-      
-      if (!isValidExtension) {
-        errors.value.karaokeFile = 'Неверный формат файла. Разрешены только файлы .ttml';
-        return;
-      }
-      
-      if (file.size > 10 * 1024 * 1024) {
-        errors.value.karaokeFile = 'Размер файла не должен превышать 10 МБ';
+      const karaokeValidationError = validateKaraokeFiles(droppedFiles);
+      if (karaokeValidationError) {
+        errors.value.karaokeFile = karaokeValidationError;
         return;
       }
       
       try {
-        if (!filesDBInitialized.value) {
-          throw new Error('Files DB not initialized');
+        const uploaded = await replaceKaraokeFiles(droppedFiles);
+        if (uploaded) {
+          ElMessage.success('Файл успешно загружен');
         }
-        
-        const fileId = generateFileId('karaoke');
-        
-        if (karaokeFileId.value) {
-          await removeFileFromDB(karaokeFileId.value);
-        }
-        
-        await saveFileToDB(file, fileId);
-        
-        formData.value.karaokeFile = file;
-        karaokeFileName.value = file.name;
-        karaokeFileSize.value = file.size;
-        karaokeFileId.value = fileId;
-        errors.value.karaokeFile = '';
-        
-        await saveStateToDB();
-        ElMessage.success('Файл успешно загружен');
       } catch (error) {
         console.error('Quiz5: Error uploading file:', error);
         ElMessage.error('Ошибка при загрузке файла');
@@ -825,24 +856,30 @@ const removeUploadedAppleMusicFile = async () => {
   ElMessage.info('Файл удален');
 };
 
-const removeUploadedKaraokeFile = async () => {
-  if (karaokeFileId.value) {
-    await removeFileFromDB(karaokeFileId.value);
+const removeUploadedKaraokeFile = async (index?: number) => {
+  if (typeof index === 'number') {
+    const fileInfo = karaokeFilesInfo.value[index];
+    if (!fileInfo) return;
+
+    await removeFileFromDB(fileInfo.fileId);
+    karaokeFilesInfo.value.splice(index, 1);
+    formData.value.karaokeFile.splice(index, 1);
+  } else {
+    for (const fileInfo of karaokeFilesInfo.value) {
+      await removeFileFromDB(fileInfo.fileId);
+    }
+    karaokeFilesInfo.value = [];
+    formData.value.karaokeFile = [];
   }
-  
-  formData.value.karaokeFile = null;
-  karaokeFileName.value = '';
-  karaokeFileSize.value = 0;
-  karaokeFileId.value = null;
-  
-  if (karaokeFileRef.value) {
+
+  if (formData.value.karaokeFile.length === 0 && karaokeFileRef.value) {
     karaokeFileRef.value.value = '';
   }
-  
+
   errors.value.karaokeFile = '';
   validateFileConsistency();
   await saveStateToDB();
-  
+
   ElMessage.info('Файл удален');
 };
 
@@ -919,13 +956,9 @@ watch(() => appleMusicFileSize.value, () => {
   if (dataLoaded.value) debouncedSave(); 
 });
 
-watch(() => karaokeFileName.value, () => { 
-  if (dataLoaded.value) debouncedSave(); 
-});
-
-watch(() => karaokeFileSize.value, () => { 
-  if (dataLoaded.value) debouncedSave(); 
-});
+watch(() => karaokeFilesInfo.value, () => {
+  if (dataLoaded.value) debouncedSave();
+}, { deep: true });
 
 // При монтировании загружаем состояние
 onMounted(async () => {
@@ -1110,6 +1143,7 @@ onUnmounted(() => {
           type="file" 
           ref="karaokeFileRef" 
           @change="handleKaraokeFileChange" 
+          multiple
           accept=".ttml" 
           style="display: none"
         />
@@ -1133,12 +1167,12 @@ onUnmounted(() => {
             </p>
           </div>
         </div>
-        <div v-if="formData.karaokeFile" class="quiz__form_single_name">
+        <div v-for="(file, index) in karaokeFilesInfo" :key="file.fileId" class="quiz__form_single_name">
           <div class="quiz__form_single_name_left">
-            <p class="quiz__form_single_name_text">{{ karaokeFileName }}</p>
-            <p class="quiz__form_single_name_size text_small">{{ formatFileSize(karaokeFileSize) }}</p>
+            <p class="quiz__form_single_name_text">{{ file.name }}</p>
+            <p class="quiz__form_single_name_size text_small">{{ formatFileSize(file.size) }}</p>
           </div>
-          <div class="quiz__form_single_name_svg" @click="removeUploadedKaraokeFile">
+          <div class="quiz__form_single_name_svg" @click="removeUploadedKaraokeFile(index)">
             <CloseSVG />
           </div>
         </div>
@@ -1263,7 +1297,7 @@ onUnmounted(() => {
           v-model="formData.socialLinks"
           type="text"
           :class="{ 'error': errors.socialLinks }"
-          placeholder="Ссылки на соцсети через запятую"
+          placeholder="vk.com/artist, instagram.com/artist, t.me/artist"
           @blur="validateField('socialLinks')"
           @input="errors.socialLinks = ''"
           size="large"

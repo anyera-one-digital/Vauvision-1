@@ -8,7 +8,8 @@ import ButtonSVG from "@/uikit/icon/ButtonSVG.vue";
 import ClipSVG from "@/uikit/icon/ClipSVG.vue";
 import { sendRequest } from '@/utils/api';
 
-const PARTNER_REFERRALS_URL = '/ajax_vue/ajax/partnerReferrals.php';
+/** Пагинация рефералов на сервере (getData.php), без загрузки всего списка в JSON */
+const GETDATA_REFERRALS_QUERY = '/ajax_vue/ajax/getData.php';
 
 const isLoading = ref<boolean>(false);
 const loadingSvg = `
@@ -39,7 +40,7 @@ const referralData = ref({
 });
 
 const referralUsers = shallowRef<ReferralUser[]>([]);
-/** Всего рефералов; в массиве только текущая страница с сервера */
+/** Страница с сервера; всего referalUsers — referralUsersTotal в profile */
 const referralUsersTotal = ref(0);
 const isAccepting = ref(false);
 const copySuccess = ref(false);
@@ -54,19 +55,22 @@ const PARTNER_EMAIL_VIEWPORT_MAX = 539;
 const PARTNER_EMAIL_CELL_TRUNCATE_MIN = 130;
 
 const isPartnerEmailNarrowViewport = ref(false);
-const partnerEmailClampActive = ref<Record<number, boolean>>({});
-const expandedPartnerEmailIds = ref<Record<number, boolean>>({});
+const partnerEmailClampActive = ref<Record<string, boolean>>({});
+const expandedPartnerEmailIds = ref<Record<string, boolean>>({});
 
-const partnerEmailCellEls = new Map<number, HTMLElement>();
-const partnerEmailCellObservers = new Map<number, ResizeObserver>();
+const partnerEmailCellEls = new Map<string, HTMLElement>();
+const partnerEmailCellObservers = new Map<string, ResizeObserver>();
 
-const updatePartnerEmailClampForWidth = (id: number, width: number) => {
+const updatePartnerEmailClampForWidth = (id: string, width: number) => {
   const active =
     isPartnerEmailNarrowViewport.value && width > PARTNER_EMAIL_CELL_TRUNCATE_MIN;
-  partnerEmailClampActive.value = {
-    ...partnerEmailClampActive.value,
-    [id]: active,
-  };
+  const prevActive = partnerEmailClampActive.value[id] ?? false;
+  if (prevActive !== active) {
+    partnerEmailClampActive.value = {
+      ...partnerEmailClampActive.value,
+      [id]: active,
+    };
+  }
   if (!active && expandedPartnerEmailIds.value[id]) {
     const next = { ...expandedPartnerEmailIds.value };
     delete next[id];
@@ -80,8 +84,14 @@ const recalcAllPartnerEmailClamps = () => {
   });
 };
 
-const bindPartnerEmailCell = (id: number, el: unknown) => {
+const bindPartnerEmailCell = (id: string, el: unknown) => {
   const html = el instanceof HTMLElement ? el : null;
+
+  /** Уже привязан этот DOM-узел — иначе каждый рендер перезаписывает ref и снова мутирует реактивность → бесконечный цикл */
+  if (html && partnerEmailCellEls.get(id) === html && partnerEmailCellObservers.has(id)) {
+    return;
+  }
+
   const prev = partnerEmailCellObservers.get(id);
   if (prev) {
     prev.disconnect();
@@ -89,9 +99,11 @@ const bindPartnerEmailCell = (id: number, el: unknown) => {
   }
   if (!html) {
     partnerEmailCellEls.delete(id);
-    const nextClamp = { ...partnerEmailClampActive.value };
-    delete nextClamp[id];
-    partnerEmailClampActive.value = nextClamp;
+    if (id in partnerEmailClampActive.value) {
+      const nextClamp = { ...partnerEmailClampActive.value };
+      delete nextClamp[id];
+      partnerEmailClampActive.value = nextClamp;
+    }
     return;
   }
 
@@ -105,7 +117,7 @@ const bindPartnerEmailCell = (id: number, el: unknown) => {
   updatePartnerEmailClampForWidth(id, html.getBoundingClientRect().width);
 };
 
-const togglePartnerEmail = (id: number) => {
+const togglePartnerEmail = (id: string) => {
   if (!partnerEmailClampActive.value[id]) return;
   expandedPartnerEmailIds.value = {
     ...expandedPartnerEmailIds.value,
@@ -132,16 +144,29 @@ const totalPartnersPages = computed(() => {
   return Math.max(1, Math.ceil(total / perPage));
 });
 
-const paginatedPartners = computed(() =>
-  referralUsers.value.map((user: ReferralUser) => ({
-    id: parseInt(user.ID, 10),
-    name: user.LOGIN || 'Без имени',
-    email: user.EMAIL,
-    date: formatDate(user.DATE_REGISTER),
-    earnings: user.PAYOUT,
-    releases: formatReleases(user.UF_RELEASES),
-  }))
-);
+const paginatedPartners = computed(() => {
+  const perPage = partnersPerPage.value;
+  const page = Math.max(1, currentPartnersPage.value);
+  let rows = referralUsers.value;
+  /** Если бэкенд отдал всех рефералов одним массивом (часто у «тяжёлых» лейблов), без slice Vue отрисует тысячи DOM — вкладка зависает. */
+  if (rows.length > perPage) {
+    const start = (page - 1) * perPage;
+    rows = rows.slice(start, start + perPage);
+  }
+  return rows.map((user: ReferralUser, idx: number) => {
+    const rawId = String(user.ID ?? "");
+    const parsedId = Number.parseInt(rawId, 10);
+    return {
+      rowKey: rawId ? `${rawId}-${idx}` : `row-${idx}`,
+      id: Number.isFinite(parsedId) ? parsedId : idx,
+      name: user.LOGIN || 'Без имени',
+      email: user.EMAIL,
+      date: formatDate(user.DATE_REGISTER),
+      earnings: user.PAYOUT,
+      releases: formatReleases(user.UF_RELEASES),
+    };
+  });
+});
 
 const showPartnersPagination = computed(() => referralUsersTotal.value > partnersPerPage.value);
 
@@ -168,28 +193,28 @@ const formatReleases = (releases: string | number) => {
 const nextPartnersPage = async () => {
   if (currentPartnersPage.value >= totalPartnersPages.value) return;
   expandedPartnerEmailIds.value = {};
-  await fetchPartnerReferrals(currentPartnersPage.value + 1);
+  await fetchPartnerReferralsPage(currentPartnersPage.value + 1);
 };
 
 const prevPartnersPage = async () => {
   if (currentPartnersPage.value <= 1) return;
   expandedPartnerEmailIds.value = {};
-  await fetchPartnerReferrals(currentPartnersPage.value - 1);
+  await fetchPartnerReferralsPage(currentPartnersPage.value - 1);
 };
 
-type PartnerReferralsProfile = {
+type CabinetProfileReferrals = {
   referralUsers?: ReferralUser[];
   referralUsersTotal?: number;
   referralUsersPage?: number;
   referralUsersPerPage?: number;
 };
 
-const fetchPartnerReferrals = async (page = 1) => {
+const fetchPartnerReferralsPage = async (page = 1) => {
   isLoading.value = true;
   try {
     const perPage = partnersPerPage.value;
-    const sep = PARTNER_REFERRALS_URL.includes('?') ? '&' : '?';
-    const url = `${PARTNER_REFERRALS_URL}${sep}page=${page}&per_page=${perPage}`;
+    const sep = GETDATA_REFERRALS_QUERY.includes('?') ? '&' : '?';
+    const url = `${GETDATA_REFERRALS_QUERY}${sep}referral_page=${page}&referral_per_page=${perPage}`;
     const response = await sendRequest('get', url, {});
 
     const payload = response.data as Record<string, unknown> | undefined;
@@ -202,7 +227,7 @@ const fetchPartnerReferrals = async (page = 1) => {
       };
     }
 
-    const prof = payload?.profile as PartnerReferralsProfile | undefined;
+    const prof = payload?.profile as CabinetProfileReferrals | undefined;
     const list = Array.isArray(prof?.referralUsers) ? prof!.referralUsers! : [];
     referralUsers.value = list;
 
@@ -230,7 +255,7 @@ const acceptAgreement = async () => {
     const response = await sendRequest('post', '/auth/profile/agreeReferalProgram.php', {});
     
     if (response.data && response.data.success) {
-      await fetchPartnerReferrals(1);
+      await fetchPartnerReferralsPage(1);
     } else {
       alert('Ошибка при принятии условий');
     }
@@ -263,7 +288,7 @@ onMounted(() => {
   );
   isPartnerEmailNarrowViewport.value = partnerEmailMql.matches;
   partnerEmailMql.addEventListener("change", onPartnerEmailViewportChange);
-  fetchPartnerReferrals(1);
+  fetchPartnerReferralsPage(1);
 });
 
 watch(showConditionsModal, (open) => {
@@ -354,7 +379,7 @@ onUnmounted(() => {
                 <li 
                   class="partner__item" 
                   v-for="partner in paginatedPartners" 
-                  :key="partner.id"
+                  :key="partner.rowKey"
                 >
                   <div class="partner__cell partner__name">
                     <div class="partner__user">
@@ -365,11 +390,11 @@ onUnmounted(() => {
                   <div
                     class="partner__cell partner__email"
                     :class="{
-                      'partner__email--clamp': partnerEmailClampActive[partner.id],
-                      'partner__email--expanded': expandedPartnerEmailIds[partner.id],
+                      'partner__email--clamp': partnerEmailClampActive[partner.rowKey],
+                      'partner__email--expanded': expandedPartnerEmailIds[partner.rowKey],
                     }"
-                    :ref="(el) => bindPartnerEmailCell(partner.id, el)"
-                    @click="togglePartnerEmail(partner.id)"
+                    :ref="(el) => bindPartnerEmailCell(partner.rowKey, el)"
+                    @click="togglePartnerEmail(partner.rowKey)"
                   >
                     <span class="partner__email-text">{{ partner.email }}</span>
                   </div>
@@ -647,6 +672,16 @@ onUnmounted(() => {
 
 .personal {
   margin: 0 0 auto;
+}
+
+.personal__block {
+  @media (max-width: 1919px) {
+    width: calc(100% - 230px);
+  }
+
+  @media (max-width: 1439px) {
+    width: 100%;
+  }
 }
 
 .partner__agreement {

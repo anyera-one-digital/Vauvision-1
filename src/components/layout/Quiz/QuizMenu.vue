@@ -117,7 +117,22 @@ const isStepCompleted = async (step: number): Promise<boolean> => {
         const citizenshipOk = p.citizenship !== 'other' || p.otherCitizenship;
         
         if (p.userType === 'entrepreneur') {
-          return common && citizenshipOk && !!(p.legalAddress && p.inn && p.ogrn && p.accountNumber && p.bankName && p.bankBik && p.correspondentAccount);
+          return (
+            common &&
+            citizenshipOk &&
+            !!(
+              p.entrepreneurFullName &&
+              p.entrepreneurEmail &&
+              p.legalAddress &&
+              p.inn &&
+              p.ogrn &&
+              p.accountNumber &&
+              p.bankName &&
+              p.bankInn &&
+              p.bankBik &&
+              p.correspondentAccount
+            )
+          );
         }
         return common && citizenshipOk;
       }

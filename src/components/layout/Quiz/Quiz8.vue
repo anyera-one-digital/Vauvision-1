@@ -2,6 +2,8 @@
 <div class="quiz__form quiz__form_eight">
   <template v-if="showPaymentWay">
     <PaymentWay
+      :usdt-order-id="paymentUsdtOrderId"
+      :usdt-oplata-endpoint="paymentCryptoEndpointResolved"
       :usdt-payment-url="usdtPaymentUrlResolved"
       :card-payment-url="cardPaymentUrlResolved"
     />
@@ -37,15 +39,16 @@
     <template v-if="showIpSummaryBlock && quiz4FormSummary">
       <div class="quiz__simple_summary_ip">
         <div class="quiz__simple_summary_ip_title">Реквизиты ИП</div>
+        <div>ФИО предпринимателя: {{ quiz4FormSummary.entrepreneurFullName?.trim() || '—' }}</div>
         <div>Юридический адрес: {{ quiz4FormSummary.legalAddress?.trim() || '—' }}</div>
         <div>ИНН: {{ quiz4FormSummary.inn?.trim() || '—' }}</div>
-        <div>ОГРН: {{ quiz4FormSummary.ogrn?.trim() || '—' }}</div>
+        <div>ОГРН/ОГРНИП: {{ quiz4FormSummary.ogrn?.trim() || '—' }}</div>
         <div>Расчётный счёт: {{ quiz4FormSummary.accountNumber?.trim() || '—' }}</div>
         <div>Банк: {{ quiz4FormSummary.bankName?.trim() || '—' }}</div>
         <div>ИНН банка: {{ quiz4FormSummary.bankInn?.trim() || '—' }}</div>
         <div>БИК: {{ quiz4FormSummary.bankBik?.trim() || '—' }}</div>
         <div>Корреспондентский счёт: {{ quiz4FormSummary.correspondentAccount?.trim() || '—' }}</div>
-        <div>Юридический адрес банка: {{ quiz4FormSummary.bankLegalAddress?.trim() || '—' }}</div>
+        <div>E-mail предпринимателя: {{ quiz4FormSummary.entrepreneurEmail?.trim() || '—' }}</div>
       </div>
     </template>
   </div>
@@ -94,6 +97,11 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { FileRequest } from '@/utils/api';
 import { buildInstrumentalsFromQuiz2 } from '@/utils/quizInstrumentalsSummary';
+import {
+  markQuizOrderCompleted,
+  QUIZ_ORDER_COMPLETED_SESSION_KEY,
+  resetQuizDraft,
+} from '@/utils/quizDraftReset';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import PaymentWay from '@/components/layout/Quiz/PaymentWay.vue';
 import { openDB } from 'idb';
@@ -106,6 +114,8 @@ const emit = defineEmits<{
 const QUIZ_LAST_PAYMENT_LINKS_KEY = 'quiz_last_payment_links';
 
 const showPaymentWay = ref(false);
+const paymentUsdtOrderId = ref<number | undefined>();
+const paymentCryptoEndpointResolved = ref('');
 const usdtPaymentUrlResolved = ref('');
 const cardPaymentUrlResolved = ref('');
 
@@ -114,6 +124,7 @@ type OrderSuccessPayload = {
   payment_url?: string;
   payment_usdt_url?: string;
   payment_card_url?: string;
+  payment_crypto_endpoint?: string;
 };
 
 const resolvePaymentHref = (url: string): string => {
@@ -125,6 +136,8 @@ const resolvePaymentHref = (url: string): string => {
 
 const resetPaymentWay = () => {
   showPaymentWay.value = false;
+  paymentUsdtOrderId.value = undefined;
+  paymentCryptoEndpointResolved.value = '';
   usdtPaymentUrlResolved.value = '';
   cardPaymentUrlResolved.value = '';
 };
@@ -150,16 +163,42 @@ const extractOrderSuccessData = (responseData: unknown): OrderSuccessPayload | n
 };
 
 const tryShowPaymentWay = (data: OrderSuccessPayload): boolean => {
-  let usdt = data.payment_usdt_url?.trim();
   let card = data.payment_card_url?.trim();
   const base = data.payment_url?.trim();
-  if ((!usdt || !card) && base) {
-    const sep = base.includes('?') ? '&' : '?';
-    if (!usdt) usdt = `${base}${sep}SYSTEM=CRYPTO`;
-    if (!card) card = `${base}${sep}SYSTEM=CloudPayments`;
+  if (!card && base) {
+    if (base.includes('?ORDER_ID=')) {
+      card = base.replace('?ORDER_ID=', 'cloud.php?ORDER_ID=');
+    } else {
+      const sep = base.includes('?') ? '&' : '?';
+      card = `${base}${sep}SYSTEM=CloudPayments`;
+    }
   }
-  if (!usdt || !card) return false;
-  usdtPaymentUrlResolved.value = resolvePaymentHref(usdt);
+  let usdtLegacy = data.payment_usdt_url?.trim();
+  if (!usdtLegacy && base) {
+    const sep = base.includes('?') ? '&' : '?';
+    usdtLegacy = `${base}${sep}SYSTEM=CRYPTO`;
+  }
+
+  let orderNum: number | undefined;
+  if (data.order_id !== undefined && data.order_id !== null && `${data.order_id}`.trim() !== '') {
+    const n = Number(data.order_id);
+    if (!Number.isNaN(n) && n > 0) orderNum = n;
+  }
+
+  if (!card) return false;
+
+  if (orderNum === undefined && !usdtLegacy) return false;
+
+  paymentCryptoEndpointResolved.value = (data.payment_crypto_endpoint ?? '/ajax_vue/ajax/oplata.php').trim();
+
+  if (orderNum !== undefined) {
+    paymentUsdtOrderId.value = orderNum;
+    usdtPaymentUrlResolved.value = '';
+  } else {
+    paymentUsdtOrderId.value = undefined;
+    usdtPaymentUrlResolved.value = resolvePaymentHref(usdtLegacy!);
+  }
+
   cardPaymentUrlResolved.value = resolvePaymentHref(card);
   showPaymentWay.value = true;
   try {
@@ -167,6 +206,8 @@ const tryShowPaymentWay = (data: OrderSuccessPayload): boolean => {
       QUIZ_LAST_PAYMENT_LINKS_KEY,
       JSON.stringify({
         order_id: data.order_id,
+        usdt_order_id: paymentUsdtOrderId.value,
+        crypto_endpoint: paymentCryptoEndpointResolved.value,
         usdt: usdtPaymentUrlResolved.value,
         card: cardPaymentUrlResolved.value,
       }),
@@ -178,11 +219,23 @@ const tryShowPaymentWay = (data: OrderSuccessPayload): boolean => {
   return true;
 };
 
+const cleanupDraftAfterSuccessfulOrder = async (
+  preservePaymentLinks: boolean,
+): Promise<void> => {
+  markQuizOrderCompleted();
+  const preserveSessionKeys = [QUIZ_ORDER_COMPLETED_SESSION_KEY];
+  if (preservePaymentLinks) {
+    preserveSessionKeys.push(QUIZ_LAST_PAYMENT_LINKS_KEY);
+  }
+  await resetQuizDraft({ preserveSessionKeys });
+};
+
 // Интерфейсы
 interface ContractData {
   doc_pdf: string;
   doc_docx: string;
   images: string[];
+  element_id?: string;
 }
 
 interface SingleTrack {
@@ -252,6 +305,8 @@ interface Quiz3Data {
 interface Quiz4Data {
   formData?: {
     userType?: string;
+    entrepreneurFullName?: string;
+    entrepreneurEmail?: string;
     legalAddress?: string;
     inn?: string;
     ogrn?: string;
@@ -260,7 +315,6 @@ interface Quiz4Data {
     bankInn?: string;
     bankBik?: string;
     correspondentAccount?: string;
-    bankLegalAddress?: string;
     citizenship?: string;
     otherCitizenship?: string;
     lastName?: string;
@@ -295,6 +349,11 @@ interface Quiz5Data {
     size?: number;
     fileId?: string | null;
   };
+  karaokeFilesInfo?: Array<{
+    name?: string;
+    size?: number;
+    fileId?: string | null;
+  }>;
 }
 
 interface Quiz6Data {
@@ -410,9 +469,8 @@ const audioFilesList = ref<Array<{file: File, fileName: string, type: string, pr
 
 // Файлы из Quiz5
 const appleMusicFile = ref<File | null>(null);
-const karaokeFile = ref<File | null>(null);
+const karaokeFiles = ref<File[]>([]);
 const appleMusicFileName = ref('');
-const karaokeFileName = ref('');
 
 // Данные из шагов
 const quiz1Data = ref<Quiz1Data | null>(null);
@@ -541,21 +599,33 @@ const loadAppleMusicFile = async (): Promise<File | null> => {
   return file;
 };
 
-// Загрузка Karaoke файла (ttml) из Quiz5
-const loadKaraokeFile = async (): Promise<File | null> => {
-  if (!filesDBInitialized.value || !quiz5Data.value?.karaokeFileInfo?.fileId) {
-    return null;
+// Загрузка Karaoke файлов (ttml) из Quiz5
+const loadKaraokeFiles = async (): Promise<File[]> => {
+  if (!filesDBInitialized.value || !quiz5Data.value) {
+    return [];
   }
-  
-  const fileId = quiz5Data.value.karaokeFileInfo.fileId;
-  const file = await loadFileFromDB(fileId, 'files');
-  
-  if (file) {
-    karaokeFileName.value = file.name;
-    console.log('Quiz8: Karaoke file loaded:', file.name);
+
+  const karaokeFilesMeta = Array.isArray(quiz5Data.value.karaokeFilesInfo)
+    ? quiz5Data.value.karaokeFilesInfo
+    : quiz5Data.value.karaokeFileInfo
+      ? [quiz5Data.value.karaokeFileInfo]
+      : [];
+
+  const files: File[] = [];
+
+  for (const fileMeta of karaokeFilesMeta) {
+    if (!fileMeta?.fileId) continue;
+    const file = await loadFileFromDB(fileMeta.fileId, 'files');
+    if (file) {
+      files.push(file);
+    }
   }
-  
-  return file;
+
+  if (files.length > 0) {
+    console.log('Quiz8: Karaoke files loaded:', files.map(file => file.name));
+  }
+
+  return files;
 };
 
 // Загрузка всех аудиофайлов из Quiz2
@@ -676,13 +746,13 @@ const loadAllData = async () => {
     coverFile.value = await loadCoverFile();
     audioFilesList.value = await loadAllAudioFiles();
     appleMusicFile.value = await loadAppleMusicFile();
-    karaokeFile.value = await loadKaraokeFile();
+    karaokeFiles.value = await loadKaraokeFiles();
     
     console.log('Quiz8: Files loaded:', {
       cover: coverFile.value ? '✅' : '❌',
       audioCount: audioFilesList.value.length,
       appleMusic: appleMusicFile.value ? '✅' : '❌',
-      karaoke: karaokeFile.value ? '✅' : '❌'
+      karaokeCount: karaokeFiles.value.length
     });
     
     dataLoaded.value = true;
@@ -700,8 +770,13 @@ const hasContract = computed(() => {
   return !!(quiz6Data.value?.contractData || quiz7Data.value?.contractData);
 });
 
+const isValidSignatureDataUrl = (signature: unknown): signature is string => {
+  if (typeof signature !== 'string') return false;
+  return /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(signature);
+};
+
 const hasSignature = computed(() => {
-  return !!quiz7Data.value?.signature;
+  return isValidSignatureDataUrl(quiz7Data.value?.signature);
 });
 
 const hasCover = computed(() => {
@@ -1172,7 +1247,6 @@ const prepareOrderData = async (): Promise<FormData> => {
     const legalAddr = u.legalAddress || '';
     const bankInn = u.bankInn || '';
     const corr = u.correspondentAccount || '';
-    const bankAddr = u.bankLegalAddress || '';
     formData.append('yur-arg-org', legalAddr);
     formData.append('inn', u.inn || '');
     formData.append('ogrn', u.ogrn || '');
@@ -1181,12 +1255,19 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('inn-bank', bankInn);
     formData.append('bik', u.bankBik || '');
     formData.append('kor-s', corr);
-    formData.append('yur-adr-bank', bankAddr);
+    /** Требование merge-поля в dogovor / шаблоне; без отдельного поля в квизе — подставляем наименование банка для ИП. */
+    const bankLegalForOrder =
+      u.userType === 'entrepreneur' ? cleanField(u.bankName || '') : '';
+    formData.append('yur-adr-bank', bankLegalForOrder);
     /* Дубликаты с подчёркиванием — order.php читает $_REQUEST['yur_arg_org'] и т.д. */
     formData.append('yur_arg_org', legalAddr);
     formData.append('inn_bank', bankInn);
     formData.append('kor_s', corr);
-    formData.append('yur_adr_bank', bankAddr);
+    formData.append('yur_adr_bank', bankLegalForOrder);
+    if (u.userType === 'entrepreneur') {
+      formData.append('fio-ip', u.entrepreneurFullName || '');
+      formData.append('email-ip', u.entrepreneurEmail || '');
+    }
     
     formData.append('citysenship1', '');
     formData.append('citysenship', formatCitizenship(u.citizenship, u.otherCitizenship));
@@ -1278,6 +1359,12 @@ const prepareOrderData = async (): Promise<FormData> => {
     
     formData.append('docName', contractData.value.doc_pdf || '');
     formData.append('docNameDocx', contractData.value.doc_docx || '');
+    const contractElementId = String(contractData.value.element_id || '').trim();
+    if (contractElementId) {
+      formData.append('id', contractElementId);
+      formData.append('element_id', contractElementId);
+      console.log('contract element_id:', contractElementId);
+    }
     
     if (contractData.value.images && Array.isArray(contractData.value.images)) {
       contractData.value.images.forEach((img: string, index: number) => {
@@ -1298,9 +1385,12 @@ const prepareOrderData = async (): Promise<FormData> => {
   formData.append('quiz-policy-one', acceptTerms ? 'on' : 'off');
   formData.append('quiz-policy-two', acceptPrivacy ? 'on' : 'off');
   
-  if (quiz7Data.value?.signature) {
+  const signatureValue = quiz7Data.value?.signature;
+  if (isValidSignatureDataUrl(signatureValue)) {
     console.log('podp-url: [подпись получена]');
-    formData.append('podp-url', quiz7Data.value.signature);
+    formData.append('podp-url', signatureValue);
+  } else if (signatureValue) {
+    throw new Error('Подпись договора имеет неверный формат. Вернитесь на шаг 7 и подпишите договор заново.');
   }
 
   // --- 10. ПРИКРЕПЛЯЕМ ВСЕ ФАЙЛЫ ---
@@ -1310,7 +1400,7 @@ const prepareOrderData = async (): Promise<FormData> => {
   if (coverFile.value) totalFiles++;
   totalFiles += audioFilesList.value.length;
   if (appleMusicFile.value) totalFiles++;
-  if (karaokeFile.value) totalFiles++;
+  totalFiles += karaokeFiles.value.length;
   totalFilesCount.value = totalFiles;
   uploadedCount.value = 0;
   let currentFileIndex = 0;
@@ -1366,11 +1456,11 @@ const prepareOrderData = async (): Promise<FormData> => {
     uploadedCount.value = currentFileIndex;
   }
   
-  // 10.4 Прикрепляем Karaoke файл (ttml)
-  if (karaokeFile.value) {
-    formData.append('karaoke-text', karaokeFile.value);
-    console.log('Прикреплен Karaoke текст (ttml):', karaokeFile.value.name);
-    
+  // 10.4 Прикрепляем Karaoke файлы (ttml)
+  for (const karaokeFile of karaokeFiles.value) {
+    formData.append('karaoke-text', karaokeFile);
+    console.log('Прикреплен Karaoke текст (ttml):', karaokeFile.name);
+
     currentFileIndex++;
     uploadedCount.value = currentFileIndex;
   }
@@ -1413,7 +1503,7 @@ const prepareOrderData = async (): Promise<FormData> => {
   console.log('Обложка:', coverFile.value ? '✅' : '❌');
   console.log('Аудиофайлы:', audioFilesList.value.length);
   console.log('Apple Music файл:', appleMusicFile.value ? '✅' : '❌');
-  console.log('Karaoke файл:', karaokeFile.value ? '✅' : '❌');
+  console.log('Karaoke файлы:', karaokeFiles.value.length);
   
   if (hasSingles.value) {
     const singlesWithoutId = quiz2Data.value?.singleTracks?.filter(t => !t.product_id) || [];
@@ -1489,6 +1579,9 @@ const getOrderErrorDisplayNumber = (payload: { error: number; message: string })
 /** Краткое пояснение, каких данных не хватает или что проверить */
 const mapOrderServerMessageToHint = (message: string): string => {
   const t = message.toLowerCase();
+  if (t.includes('504') || t.includes('gateway timeout') || t.includes('time-out')) {
+    return 'сервис перегружен попробуйте ещё раз или напишите нам в поддержку, если вопрос срочный';
+  }
   if (t.includes('trackid')) {
     return 'не переданы идентификаторы синглов (trackID) — проверьте шаг с треками и загрузку на сервер';
   }
@@ -1535,6 +1628,16 @@ const mapOrderServerMessageToHint = (message: string): string => {
 };
 
 const showOrderSubmissionError = (payload: { error: number; message: string }) => {
+  if (Number(payload.error) === 504) {
+    ElMessage.error({
+      message: 'Ошибка 504: сервис перегружен попробуйте ещё раз или напишите нам в поддержку, если вопрос срочный',
+      duration: 0,
+      showClose: true,
+      grouping: true,
+    });
+    return;
+  }
+
   const num = getOrderErrorDisplayNumber(payload);
   const hint = mapOrderServerMessageToHint(payload.message);
   const text = `Ошибка (${num}): ${hint}. Проверьте правильность заполнения данных или пришлите скриншот ошибки в тех. поддержку`;
@@ -1672,7 +1775,7 @@ const handleFinish = async () => {
     console.log('Quiz5 (Жанр и текст):', quiz5Data.value?.formData);
     console.log('Quiz5 (Файлы):', {
       appleMusic: quiz5Data.value?.appleMusicFileInfo,
-      karaoke: quiz5Data.value?.karaokeFileInfo
+      karaoke: quiz5Data.value?.karaokeFilesInfo || quiz5Data.value?.karaokeFileInfo
     });
     
     console.log('Quiz6 (Дополнительная информация):', quiz6Data.value?.formData);
@@ -1763,6 +1866,7 @@ const handleFinish = async () => {
 
       const successData = extractOrderSuccessData(responseData);
       if (successData && tryShowPaymentWay(successData)) {
+        await cleanupDraftAfterSuccessfulOrder(true);
         console.log('💳 Показ PaymentWay:', {
           order_id: successData.order_id,
           usdt: usdtPaymentUrlResolved.value,
@@ -1790,6 +1894,7 @@ const handleFinish = async () => {
       }
 
       if (orderId) {
+        await cleanupDraftAfterSuccessfulOrder(false);
         console.log('✅ Заказ создан, ID:', orderId);
         ElMessage.success(`Заказ №${orderId} успешно оформлен!`);
         emit('finish');
@@ -1797,6 +1902,7 @@ const handleFinish = async () => {
       }
 
       console.error('❌ Нет данных оплаты и order_id в ответе сервера');
+      await cleanupDraftAfterSuccessfulOrder(false);
       ElMessage.warning(
         'Заказ оформлен, но ссылка на оплату не получена. Проверьте правильность заполнения данных или пришлите скриншот ошибки в тех. поддержку',
       );
@@ -1825,6 +1931,15 @@ const handleFinish = async () => {
     } else if (error.response) {
       console.error('❌ Статус ошибки:', error.response.status);
       console.error('❌ Данные ошибки:', error.response.data);
+      if (error.response.status === 504) {
+        ElMessage.error({
+          message: 'Ошибка 504: сервис перегружен попробуйте ещё раз или напишите нам в поддержку, если вопрос срочный',
+          duration: 0,
+          showClose: true,
+          grouping: true,
+        });
+        return;
+      }
       const raw = error.response.data;
       if (typeof raw === 'string' && raw.trim()) {
         showOrderSubmissionError({
@@ -1859,7 +1974,7 @@ const handleFinish = async () => {
   }
 };
 
-watch([quiz6Data, quiz7Data, coverFile, audioFilesList, appleMusicFile, karaokeFile], () => {
+watch([quiz6Data, quiz7Data, coverFile, audioFilesList, appleMusicFile, karaokeFiles], () => {
   console.log('Quiz8: Data changed, canSubmit:', canSubmit.value);
 }, { deep: true });
 

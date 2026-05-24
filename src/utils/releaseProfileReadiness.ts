@@ -98,6 +98,8 @@ export interface RequisitesPayload {
     address?: string;
     inn?: string;
     account?: string;
+    bankName?: string;
+    bankInn?: string;
     bik?: string;
     correspondentAccount?: string;
     email?: string;
@@ -140,6 +142,8 @@ export function isEntrepreneurRequisitesComplete(
     trimStr(e.address) &&
     trimStr(e.inn) &&
     trimStr(e.account) &&
+    trimStr(e.bankName) &&
+    trimStr(e.bankInn) &&
     trimStr(e.bik) &&
     trimStr(e.correspondentAccount) &&
     email &&

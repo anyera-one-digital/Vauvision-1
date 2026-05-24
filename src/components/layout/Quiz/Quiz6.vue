@@ -262,6 +262,7 @@ interface ContractData {
   doc_pdf: string;
   doc_docx: string;
   images: string[];
+  element_id?: string;
 }
 
 interface UploadedFileInfo {
@@ -506,7 +507,8 @@ const createSafeStateCopy = () => {
     safeContractData = {
       doc_pdf: String(contractData.value.doc_pdf || ''),
       doc_docx: String(contractData.value.doc_docx || ''),
-      images: Array.isArray(contractData.value.images) ? [...contractData.value.images] : []
+      images: Array.isArray(contractData.value.images) ? [...contractData.value.images] : [],
+      element_id: String(contractData.value.element_id || ''),
     };
   }
 
@@ -1152,6 +1154,73 @@ const saveProductNumbers = async (uploadedFiles: UploadedFileInfo[]): Promise<vo
   );
 };
 
+// Превращаем технические ошибки загрузки в понятные сообщения для пользователя
+const getReadableUploadErrorMessage = (error: any, fileName?: string): string => {
+  const cleanName = fileName ? ` "${fileName}"` : '';
+  const status = Number(error?.response?.status || 0);
+  const code = String(error?.code || '');
+  const serverMessage = String(error?.response?.data?.message || '').toLowerCase();
+
+  if (status === 413 || serverMessage.includes('size') || serverMessage.includes('too large')) {
+    return `Файл${cleanName} слишком большой. Уменьшите его размер и попробуйте снова.`;
+  }
+
+  if (status === 400 || status === 415 || status === 422) {
+    return `Файл${cleanName} не удалось обработать. Возможно, он поврежден. Выберите другой файл и попробуйте снова.`;
+  }
+
+  if (status === 429) {
+    return 'Слишком много попыток за короткое время. Подождите немного и попробуйте снова.';
+  }
+
+  if (status >= 500) {
+    return 'Сервис временно недоступен. Попробуйте снова через пару минут.';
+  }
+
+  if (code === 'ERR_NETWORK' || code === 'ECONNABORTED') {
+    return `Не удалось отправить файл${cleanName}. Проверьте интернет и попробуйте снова.`;
+  }
+
+  return `Не удалось загрузить файл${cleanName}. Попробуйте выбрать его заново и отправить еще раз.`;
+};
+
+// Превращаем ошибки формирования договора в стабильные сообщения для UI
+const getReadableContractErrorMessage = (error: any): string => {
+  const status = Number(error?.response?.status || 0);
+  const code = String(error?.code || '');
+  const responseData = error?.response?.data;
+  const responseErrorMessage = String(responseData?.error?.message || '').trim();
+  const responseMessage = String(responseData?.message || '').trim();
+
+  const formatStatusMessage = (fallbackText: string): string => {
+    const message = responseErrorMessage || responseMessage || fallbackText;
+    return `Ошибка ${status}: ${message}`;
+  };
+
+  if (status >= 500) {
+    return formatStatusMessage('сервис перегружен, попробуйте повторить попытку позднее');
+  }
+
+  if (status === 429) {
+    return formatStatusMessage('слишком много попыток за короткое время. Подождите немного и попробуйте снова.');
+  }
+
+  if (code === 'ERR_NETWORK' || code === 'ECONNABORTED' || !error?.response) {
+    return 'Не удалось связаться с сервером. Проверьте интернет-соединение и попробуйте снова.';
+  }
+
+  if (status > 0) {
+    return formatStatusMessage('ошибка при формировании договора. Попробуйте снова.');
+  }
+
+  const localMessage = String(error?.message || '').trim();
+  if (localMessage && !localMessage.toLowerCase().includes('request failed with status code')) {
+    return localMessage;
+  }
+
+  return 'Ошибка при формировании договора. Попробуйте снова.';
+};
+
 // Отправка одного аудио файла на сервер через FileRequest
 const uploadAudioFile = async (file: File, type: 'single' | 'album', trackIndex?: number, albumIndex?: number): Promise<any> => {
   const formData = new FormData();
@@ -1181,7 +1250,7 @@ const uploadAudioFile = async (file: File, type: 'single' | 'album', trackIndex?
     return response.data;
   } catch (error) {
     console.error(`Quiz6: Error uploading ${type} file:`, error);
-    throw error;
+    throw new Error(getReadableUploadErrorMessage(error, file?.name));
   }
 };
 
@@ -1344,8 +1413,9 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
     return uploadedFilesData;
   } catch (error) {
     console.error('Quiz6: Error during file upload:', error);
-    ElMessage.error('Ошибка при отправке файлов на сервер');
-    throw error;
+    throw error instanceof Error
+      ? error
+      : new Error('Не удалось отправить файлы. Попробуйте еще раз.');
   } finally {
     uploadingFiles.value = false;
   }
@@ -1501,7 +1571,6 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     const le = cleanField(u.legalAddress || '');
     const bi = u.bankInn || '';
     const cr = u.correspondentAccount || '';
-    const ya = cleanField(u.bankLegalAddress || '');
     formDataToSend.append('yur-arg-org', le);
     formDataToSend.append('yur_arg_org', le);
     formDataToSend.append('inn', u.inn || '');
@@ -1513,8 +1582,15 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     formDataToSend.append('bik', u.bankBik || '');
     formDataToSend.append('kor-s', cr);
     formDataToSend.append('kor_s', cr);
-    formDataToSend.append('yur-adr-bank', ya);
-    formDataToSend.append('yur_adr_bank', ya);
+    /** Шаблон договора / dogovorOrder всё ещё требуют непустое «ЮРИДИЧЕСКИЙ АДРЕС БАНКА»; отдельного поля в UI нет — подставляем наименование банка. */
+    const bankLegalForDock =
+      u.userType === 'entrepreneur' ? cleanField(u.bankName || '') : '';
+    formDataToSend.append('yur-adr-bank', bankLegalForDock);
+    formDataToSend.append('yur_adr_bank', bankLegalForDock);
+    if (u.userType === 'entrepreneur') {
+      formDataToSend.append('fio-ip', cleanField(u.entrepreneurFullName || ''));
+      formDataToSend.append('email-ip', cleanField(u.entrepreneurEmail || ''));
+    }
     
     const formatCitizenship = (citizenship?: string, other?: string): string => {
       if (!citizenship) return '';
@@ -1632,7 +1708,8 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
         const contract = {
           doc_pdf: data.doc_pdf,
           doc_docx: data.doc_docx,
-          images: data.images
+          images: data.images,
+          element_id: String(data.element_id || data.id || ''),
         };
         
         contractData.value = contract;
@@ -1702,7 +1779,7 @@ const handleContinue = async () => {
     
   } catch (error: any) {
     console.error('Quiz6: Error in handleContinue:', error);
-    ElMessage.error(error.message || 'Ошибка при обработке данных');
+    ElMessage.error(getReadableContractErrorMessage(error));
   } finally {
     isGeneratingContract.value = false;
   }

@@ -1,7 +1,14 @@
 <script lang="ts" setup>
+import { ref } from 'vue';
+import { ElMessage } from 'element-plus';
+
 const props = withDefaults(
   defineProps<{
-    /** URL для «Оплатить в USDT»; если нет — событие pay-usdt */
+    /** ID заказа Bitrix для POST на oplata.php (режим fetch USDT). */
+    usdtOrderId?: number;
+    /** Путь ajax-обработчика CryptoCloud из ответа order.php. */
+    usdtOplataEndpoint?: string;
+    /** Прямая ссылка на USDT, если нет usdtOrderId (обратная совместимость). */
     usdtPaymentUrl?: string;
     /** URL для «Оплатить картой»; если нет — событие pay-card */
     cardPaymentUrl?: string;
@@ -13,7 +20,8 @@ const props = withDefaults(
   {
     title: 'Способы оплаты',
     subtitle: 'Выберите удобный способ оплаты',
-  }
+    usdtOplataEndpoint: '/ajax_vue/ajax/oplata.php',
+  },
 );
 
 const emit = defineEmits<{
@@ -21,17 +29,97 @@ const emit = defineEmits<{
   'pay-card': [];
 }>();
 
-const openUsdt = () => {
+const DEFAULT_OPLATA = '/ajax_vue/ajax/oplata.php';
+
+const usdtLoading = ref(false);
+
+function openCheckoutInNewTab(url: string): void {
+  const safeUrl = url.trim();
+  const payWin = window.open(safeUrl, '_blank');
+  if (payWin) {
+    try {
+      payWin.opener = null;
+    } catch {
+      /* ignore */
+    }
+  } else {
+    ElMessage.warning(
+      'Браузер заблокировал новое окно. Открываем оплату в этой вкладке.',
+    );
+    window.location.href = safeUrl;
+  }
+}
+
+async function fetchUsdtCheckout(): Promise<boolean> {
+  const id = props.usdtOrderId;
+  if (id === undefined || Number.isNaN(id)) {
+    ElMessage.error('Не удалось получить номер заказа. Обновите страницу или обратитесь в поддержку.');
+    return false;
+  }
+  const path = props.usdtOplataEndpoint?.trim() || DEFAULT_OPLATA;
+  const url =
+    path.startsWith('http://') || path.startsWith('https://')
+      ? path
+      : `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        ORDER_ID: id,
+        SYSTEM: 'CRYPTO',
+      }),
+    });
+
+    let payload: { error?: number; message?: string };
+    try {
+      payload = await response.json();
+    } catch {
+      ElMessage.error('Сервер вернул неожиданный ответ при создании счёта USDT.');
+      return false;
+    }
+
+    if (!response.ok || payload.error !== 0 || !payload.message?.trim()) {
+      ElMessage.error(
+        typeof payload.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'Не удалось создать счёт USDT.',
+      );
+      return false;
+    }
+
+    const redirectUrl = payload.message.trim();
+    openCheckoutInNewTab(redirectUrl);
+    return true;
+  } catch {
+    ElMessage.error('Ошибка сети. Проверьте подключение и попробуйте снова.');
+    return false;
+  }
+}
+
+const openUsdt = async () => {
+  if (props.usdtOrderId !== undefined && !Number.isNaN(props.usdtOrderId)) {
+    if (usdtLoading.value) return;
+    usdtLoading.value = true;
+    await fetchUsdtCheckout();
+    usdtLoading.value = false;
+    return;
+  }
   if (props.usdtPaymentUrl) {
-    window.location.href = props.usdtPaymentUrl;
+    openCheckoutInNewTab(props.usdtPaymentUrl);
     return;
   }
   emit('pay-usdt');
 };
 
 const openCard = () => {
+  if (usdtLoading.value) return;
   if (props.cardPaymentUrl) {
-    window.location.href = props.cardPaymentUrl;
+    openCheckoutInNewTab(props.cardPaymentUrl);
     return;
   }
   emit('pay-card');
@@ -47,13 +135,15 @@ const openCard = () => {
         <button
           type="button"
           class="button button__black payment-way__btn"
+          :disabled="usdtLoading"
           @click="openUsdt"
         >
-          <span>Оплатить в USDT</span>
+          <span>{{ usdtLoading ? 'Подождите…' : 'Оплатить в USDT' }}</span>
         </button>
         <button
           type="button"
           class="button button__black payment-way__btn"
+          :disabled="usdtLoading"
           @click="openCard"
         >
           <span>Оплатить картой</span>
@@ -118,6 +208,11 @@ const openCard = () => {
 
     :deep(span) {
       text-transform: uppercase;
+    }
+
+    &:disabled {
+      opacity: 0.7;
+      pointer-events: none;
     }
   }
 

@@ -166,6 +166,14 @@ const checkAuth = async () => {
 
 // Проверка авторизации при загрузке страницы
 onMounted(() => {
+  if (sessionStorage.getItem('registration_success') === '1') {
+    sessionStorage.removeItem('registration_success')
+    ElMessage({
+      message: 'Регистрация успешно завершена!',
+      type: 'success',
+    });
+  }
+
   checkAuth()
 })
 </script>
