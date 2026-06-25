@@ -8,31 +8,44 @@ import Logo from "@/uikit/Logo.vue";
 
 const route = useRoute()
 
-// Если нужно подтверждение через токен в URL
+const getQueryParamValue = (value: string | string[] | null | undefined): string => {
+  if (Array.isArray(value)) {
+    return value[0] || ''
+  }
+  return value || ''
+}
+
 onMounted(async () => {
-  const token = route.query.token
-  
-  if (token) {
-    try {
-      await sendRequest(
-        "post",
-        '/ajax_vue/ajax/auth/confirm-email.php',
-        { token: token }
-      )
-      // Если подтверждение прошло успешно, показываем сообщение
-      ElMessage({
-        message: 'Email успешно подтвержден!',
-        type: 'success',
-      });
-    } catch (error) {
-      console.error('Ошибка подтверждения email:', error)
-      ElMessage({
-        message: 'Не удалось подтвердить email. Возможно, ссылка устарела.',
-        type: 'error',
-      });
-      // Можно редиректить на страницу с ошибкой
-      // router.push(Tr.i18nRoute({ name: 'confirmation-error' }))
-    }
+  const id = getQueryParamValue(route.query.id as string | string[] | null | undefined)
+  const confirmCode = getQueryParamValue(route.query.confirm_code as string | string[] | null | undefined)
+
+  if (!id || !confirmCode) {
+    ElMessage({
+      message: 'Недействительная ссылка подтверждения email.',
+      type: 'error',
+    });
+    return
+  }
+
+  try {
+    await sendRequest(
+      "post",
+      '/ajax_vue/ajax/auth/regFin.php',
+      {
+        id: id,
+        confirm_code: confirmCode
+      }
+    )
+    ElMessage({
+      message: 'Email успешно подтвержден!',
+      type: 'success',
+    });
+  } catch (error) {
+    console.error('Ошибка подтверждения email:', error)
+    ElMessage({
+      message: 'Не удалось подтвердить email. Возможно, ссылка устарела.',
+      type: 'error',
+    });
   }
 })
 </script>

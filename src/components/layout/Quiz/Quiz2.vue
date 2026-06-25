@@ -217,8 +217,8 @@
             </div>
             
             <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
-            <div v-if="needsRightsContractLink(track.rightsType)" class="form__group_inner">
-              <label class="form__label button text_small">Ссылка на договор<span>*</span></label>
+            <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
+              <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
               <el-input
                 v-model="track.rightsContractLink"
                 type="text"
@@ -241,6 +241,7 @@
                   validateSingleForm(trackIndex);
                 }"
               />
+              <!--
               <div
                 v-if="track.rightsType === 'wav' || track.rightsType === 'mp3'"
                 class="error text_very quiz__form_single_error"
@@ -250,8 +251,9 @@
                 </template>
                 {{ WAV_MP3_LEASE_SHIPPING_NOTICE }}
               </div>
+              -->
               <div
-                v-else-if="singleErrors[trackIndex]?.rightsContractLink"
+                v-if="singleErrors[trackIndex]?.rightsContractLink"
                 class="error text_very quiz__form_single_error"
               >
                 {{ singleErrors[trackIndex].rightsContractLink }}
@@ -277,7 +279,10 @@
               ⚠️ Внимание! Такие треки могут не пройти модерацию. Если у вас нет договора на инструментал, то вы действуете на свой страх и риск – если релиз будет отклонён, оплата не возвращается. Рекомендуем купить инструментал и подписать договор с автором.
             </div>
             <div v-if="track.rightsType === 'gifted'" class="warning text_very quiz__form_single_error">
-              ⚠️ Рекомендуем убедиться, что инструментал полностью авторский, и в нём не использованы вставки/сэмплы, нарушающие чужие права. Иначе релиз может не пройти модерацию. По возможности прикрепите договор.
+              ⚠️ Рекомендуем убедиться, что инструментал полностью авторский, и в нём не использованы вставки/сэмплы, нарушающие чужие права. Иначе релиз может не пройти модерацию, и вы действуете на свой страх и риск – если релиз будет отклонён, оплата не возвращается. Рекомендуем купить инструментал и подписать договор с автором. По возможности прикрепите договор.
+            </div>
+            <div v-if="track.rightsType === 'mp3' || track.rightsType === 'wav'" class="warning text_very quiz__form_single_error">
+              ⚠️ Внимание! Убедитесь, что у вас есть право использовать инструментал для отгрузки на площадки, и в нём не использованы чужие (пиратские) сэмплы, вставки и проч. Если у вас нет договора на инструментал, то вы действуете на свой страх и риск – если релиз будет отклонён по причине нарушения прав, оплата не возвращается. Рекомендуем купить инструментал и подписать договор с автором, если этого не сделано. По возможности, прикрепите договор.
             </div>
           </div>
         </div>
@@ -456,8 +461,8 @@
                   </div>
                   
                   <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
-                  <div v-if="needsRightsContractLink(track.rightsType)" class="form__group_inner">
-                    <label class="form__label button text_small">Ссылка на договор<span>*</span></label>
+                  <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
+                    <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
                     <el-input
                       v-model="track.rightsContractLink"
                       type="text"
@@ -480,6 +485,7 @@
                         validateAlbumTrackForm(albumIndex, trackIndex);
                       }"
                     />
+                    <!--
                     <div
                       v-if="track.rightsType === 'wav' || track.rightsType === 'mp3'"
                       class="error text_very quiz__form_single_error"
@@ -489,8 +495,9 @@
                       </template>
                       {{ WAV_MP3_LEASE_SHIPPING_NOTICE }}
                     </div>
+                    -->
                     <div
-                      v-else-if="albumErrors[albumIndex]?.tracks[trackIndex]?.rightsContractLink"
+                      v-if="albumErrors[albumIndex]?.tracks[trackIndex]?.rightsContractLink"
                       class="error text_very quiz__form_single_error"
                     >
                       {{ albumErrors[albumIndex].tracks[trackIndex].rightsContractLink }}
@@ -516,7 +523,10 @@
                     ⚠️ Внимание! Такие треки могут не пройти модерацию. Если у вас нет договора на инструментал, то вы действуете на свой страх и риск – если релиз будет отклонён, оплата не возвращается. Рекомендуем купить инструментал и подписать договор с автором.
                   </div>
                   <div v-if="track.rightsType === 'gifted'" class="warning text_very quiz__form_single_error">
-                    ⚠️ Рекомендуем убедиться, что инструментал полностью авторский, и в нём не использованы вставки/сэмплы, нарушающие чужие права. Иначе релиз может не пройти модерацию. По возможности прикрепите договор.
+                    ⚠️ Рекомендуем убедиться, что инструментал полностью авторский, и в нём не использованы вставки/сэмплы, нарушающие чужие права. Иначе релиз может не пройти модерацию, и вы действуете на свой страх и риск – если релиз будет отклонён, оплата не возвращается. Рекомендуем купить инструментал и подписать договор с автором. По возможности прикрепите договор.
+                  </div>
+                  <div v-if="track.rightsType === 'mp3' || track.rightsType === 'wav'" class="warning text_very quiz__form_single_error">
+                    ⚠️ Внимание! Убедитесь, что у вас есть право использовать инструментал для отгрузки на площадки, и в нём не использованы чужие (пиратские) сэмплы, вставки и проч. Если у вас нет договора на инструментал, то вы действуете на свой страх и риск – если релиз будет отклонён по причине нарушения прав, оплата не возвращается. Рекомендуем купить инструментал и подписать договор с автором, если этого не сделано. По возможности, прикрепите договор.
                   </div>
                 </div>
               </div>
@@ -647,7 +657,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { ElInput, ElSelect, ElOption, ElMessage } from 'element-plus';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import CloseSVG from "@/uikit/icon/CloseSVG.vue";
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -671,13 +681,18 @@ const rightsOptions = [
   { value: 'gifted', label: 'подарен / отдан бесплатно / сделан по дружбе' }
 ];
 
-/** Аренда (wav/mp3) и исключительная лицензия — нужна действующая ссылка на договор с правами на инструментал */
-function needsRightsContractLink(rightsType: string): boolean {
+/** Для этих типов прав показываем поле ссылки на договор */
+function shouldShowRightsContractLink(rightsType: string): boolean {
   return (
     rightsType === 'wav' ||
     rightsType === 'mp3' ||
     rightsType === 'exclusive'
-  )
+  );
+}
+
+/** Только исключительная лицензия требует обязательную ссылку на договор */
+function needsRightsContractLink(rightsType: string): boolean {
+  return rightsType === 'exclusive';
 }
 
 /** Допустимые треки: по расширению и/или MIME (macOS часто даёт audio/x-wav, иногда пустой type). */
@@ -707,8 +722,8 @@ function isAllowedTrackAudioFile(file: File): boolean {
 const ACCEPT_TRACK_AUDIO =
   '.mp3,.wav,.flac,.aac,.m4a,.ogg,audio/mpeg,audio/wav,audio/x-wav,audio/flac,audio/aac,audio/mp4,audio/ogg';
 
-const WAV_MP3_LEASE_SHIPPING_NOTICE =
-  'Внимание! В связи с усилением внимания к правам на отгружаемый контент со стороны площадок, сроки отгрузки релизов с таким типов прав (wav/mp3 аренда, лизинг) может быть увеличен до 14 календарных дней. Пожалуйста, учитывайте это при планировании даты релиза!'
+// const WAV_MP3_LEASE_SHIPPING_NOTICE =
+//   'Внимание! В связи с усилением внимания к правам на отгружаемый контент со стороны площадок, сроки отгрузки релизов с таким типов прав (wav/mp3 аренда, лизинг) может быть увеличен до 14 календарных дней. Пожалуйста, учитывайте это при планировании даты релиза!'
 
 const isLoadingTwo = ref(false);
 const showImportantBlock = ref(false);
@@ -834,12 +849,14 @@ const validateSingleRights = (trackIndex: number) => {
   
   if (!track.rightsType) {
     error = 'Выберите тип прав на инструментал';
-  } else if (needsRightsContractLink(track.rightsType)) {
-    if (!track.rightsContractLink?.trim()) {
-      error = 'Для выбранного типа прав необходима ссылка на договор';
-    } else if (!isValidUrl(track.rightsContractLink)) {
-      error = 'Введите корректную ссылку (начинается с https://)';
-    }
+  // } else if (needsRightsContractLink(track.rightsType)) {
+  //   if (!track.rightsContractLink?.trim()) {
+  //     error = 'Для выбранного типа прав необходима ссылка на договор';
+  //   } else if (!isValidUrl(track.rightsContractLink)) {
+  //     error = 'Введите корректную ссылку (начинается с https://)';
+  //   }
+  } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
+    error = 'Введите корректную ссылку (начинается с https://)';
   }
   
   singleErrors.value[trackIndex].rightsType = error;
@@ -850,9 +867,10 @@ const validateSingleRightsLink = (trackIndex: number) => {
   const track = singleTracks.value[trackIndex];
   let error = '';
   
-  if (needsRightsContractLink(track.rightsType) && !track.rightsContractLink?.trim()) {
-    error = 'Ссылка на договор обязательна';
-  } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
+  // if (needsRightsContractLink(track.rightsType) && !track.rightsContractLink?.trim()) {
+  //   error = 'Ссылка на договор обязательна';
+  // } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
+  if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
     error = 'Введите корректную ссылку (начинается с https://)';
   }
   
@@ -867,12 +885,14 @@ const validateAlbumTrackRights = (albumIndex: number, trackIndex: number) => {
   
   if (!track.rightsType) {
     error = 'Выберите тип прав на инструментал';
-  } else if (needsRightsContractLink(track.rightsType)) {
-    if (!track.rightsContractLink?.trim()) {
-      error = 'Для выбранного типа прав необходима ссылка на договор';
-    } else if (!isValidUrl(track.rightsContractLink)) {
-      error = 'Введите корректную ссылку (начинается с https://)';
-    }
+  // } else if (needsRightsContractLink(track.rightsType)) {
+  //   if (!track.rightsContractLink?.trim()) {
+  //     error = 'Для выбранного типа прав необходима ссылка на договор';
+  //   } else if (!isValidUrl(track.rightsContractLink)) {
+  //     error = 'Введите корректную ссылку (начинается с https://)';
+  //   }
+  } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
+    error = 'Введите корректную ссылку (начинается с https://)';
   }
   
   albumErrors.value[albumIndex].tracks[trackIndex].rightsType = error;
@@ -883,9 +903,10 @@ const validateAlbumTrackRightsLink = (albumIndex: number, trackIndex: number) =>
   const track = albums.value[albumIndex].tracks[trackIndex];
   let error = '';
   
-  if (needsRightsContractLink(track.rightsType) && !track.rightsContractLink?.trim()) {
-    error = 'Ссылка на договор обязательна';
-  } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
+  // if (needsRightsContractLink(track.rightsType) && !track.rightsContractLink?.trim()) {
+  //   error = 'Ссылка на договор обязательна';
+  // } else if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
+  if (track.rightsContractLink?.trim() && !isValidUrl(track.rightsContractLink)) {
     error = 'Введите корректную ссылку (начинается с https://)';
   }
   
@@ -1376,11 +1397,11 @@ const isReadyForNextStep = computed(() => {
       
       return isValidFullTrackTitleFormat(track.trackName) &&
         !singleErrors.value[index]?.trackName &&
-        track.performerName.trim().split(/\s+/).length >= 3 &&
+        isValidFioList(track.performerName) &&
         !singleErrors.value[index]?.performerName &&
-        track.musicAuthor.trim().split(/\s+/).length >= 3 &&
+        isValidFioList(track.musicAuthor) &&
         !singleErrors.value[index]?.musicAuthor &&
-        track.textAuthor.trim().split(/\s+/).length >= 3 &&
+        isValidFioList(track.textAuthor) &&
         !singleErrors.value[index]?.textAuthor &&
         track.rightsType &&
         !singleErrors.value[index]?.rightsType &&
@@ -1396,13 +1417,13 @@ const isReadyForNextStep = computed(() => {
       return album.tracks.every((track, trackIndex) => {
         if (!track.audioFile || !track.uploaded) return false;
         
-        const isPerformerValid = track.performerName.trim().split(/\s+/).length >= 3 &&
+        const isPerformerValid = isValidFioList(track.performerName) &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.performerName;
         
-        const isMusicAuthorValid = track.musicAuthor.trim().split(/\s+/).length >= 3 &&
+        const isMusicAuthorValid = isValidFioList(track.musicAuthor) &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.musicAuthor;
         
-        const isTextAuthorValid = track.textAuthor.trim().split(/\s+/).length >= 3 &&
+        const isTextAuthorValid = isValidFioList(track.textAuthor) &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.textAuthor;
         
         const isTrackNameValid =
@@ -1438,6 +1459,28 @@ const checkMinWords = (value: string, minWords: number): boolean => {
   return value.trim().split(/\s+/).length >= minWords;
 };
 
+// Для ФИО разрешаем только буквы (любой локали), пробелы и дефис.
+// Кавычки и прочие спецсимволы должны давать ошибку валидации.
+const hasInvalidFioSymbols = (value: string): boolean => /[^\p{L}\s-]/u.test(value.trim());
+
+const splitFioEntries = (value: string): string[] =>
+  value
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+
+const isValidFioList = (value: string): boolean => {
+  const entries = splitFioEntries(value);
+  if (!entries.length) return false;
+
+  return entries.every(entry => {
+    if (hasInvalidFioSymbols(entry)) return false;
+    if (!checkMinWords(entry, 3)) return false;
+    if (checkForbiddenWords(entry)) return false;
+    return true;
+  });
+};
+
 /** Формат: «1. Псевдоним – Название трека» (разделитель — дефис или типографское тире, с пробелами). */
 const FULL_TRACK_NAME_PATTERN_ERROR =
   'Укажите номер трека, псевдоним и название через пробелы. Пример: 1. VAUVISION - Интро';
@@ -1450,13 +1493,18 @@ const isValidFullTrackTitleFormat = (value: string): boolean => {
 
 const validateSinglePerformerName = (trackIndex: number) => {
   const value = singleTracks.value[trackIndex].performerName;
+  const entries = splitFioEntries(value);
   let error = '';
   
   if (!value.trim()) {
     error = 'ФИО исполнителя обязательно для заполнения';
-  } else if (!checkMinWords(value, 3)) {
-    error = 'ФИО исполнителя должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
-  } else if (checkForbiddenWords(value)) {
+  } else if (!entries.length) {
+    error = 'ФИО исполнителя обязательно для заполнения';
+  } else if (entries.some(hasInvalidFioSymbols)) {
+    error = 'Удалите кавычки и спецсимволы из ФИО исполнителя (в каждом ФИО через запятую)';
+  } else if (entries.some(entry => !checkMinWords(entry, 3))) {
+    error = 'Каждое ФИО исполнителя через запятую должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
+  } else if (entries.some(checkForbiddenWords)) {
     error = 'В поле "ФИО исполнителей" запрещено использовать слова: "нет", "такой", "информации", "не", "знаю", "откуда"';
   }
   
@@ -1466,13 +1514,18 @@ const validateSinglePerformerName = (trackIndex: number) => {
 
 const validateSingleMusicAuthor = (trackIndex: number) => {
   const value = singleTracks.value[trackIndex].musicAuthor;
+  const entries = splitFioEntries(value);
   let error = '';
   
   if (!value.trim()) {
     error = 'ФИО автора музыки обязательно для заполнения';
-  } else if (!checkMinWords(value, 3)) {
-    error = 'ФИО автора музыки должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
-  } else if (checkForbiddenWords(value)) {
+  } else if (!entries.length) {
+    error = 'ФИО автора музыки обязательно для заполнения';
+  } else if (entries.some(hasInvalidFioSymbols)) {
+    error = 'Удалите кавычки и спецсимволы из ФИО автора музыки (в каждом ФИО через запятую)';
+  } else if (entries.some(entry => !checkMinWords(entry, 3))) {
+    error = 'Каждое ФИО автора музыки через запятую должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
+  } else if (entries.some(checkForbiddenWords)) {
     error = 'В поле "ФИО авторов музыки" запрещено использовать слова: "нет", "такой", "информации", "не", "знаю", "откуда"';
   }
   
@@ -1482,13 +1535,18 @@ const validateSingleMusicAuthor = (trackIndex: number) => {
 
 const validateSingleTextAuthor = (trackIndex: number) => {
   const value = singleTracks.value[trackIndex].textAuthor;
+  const entries = splitFioEntries(value);
   let error = '';
   
   if (!value.trim()) {
     error = 'ФИО автора текста обязательно для заполнения';
-  } else if (!checkMinWords(value, 3)) {
-    error = 'ФИО автора текста должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
-  } else if (checkForbiddenWords(value)) {
+  } else if (!entries.length) {
+    error = 'ФИО автора текста обязательно для заполнения';
+  } else if (entries.some(hasInvalidFioSymbols)) {
+    error = 'Удалите кавычки и спецсимволы из ФИО автора текста (в каждом ФИО через запятую)';
+  } else if (entries.some(entry => !checkMinWords(entry, 3))) {
+    error = 'Каждое ФИО автора текста через запятую должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
+  } else if (entries.some(checkForbiddenWords)) {
     error = 'В поле "ФИО авторов текста" запрещено использовать слова: "нет", "такой", "информации", "не", "знаю", "откуда"';
   }
   
@@ -1531,13 +1589,18 @@ const validateSingleForm = async (trackIndex: number) => {
 
 const validateAlbumTrackPerformerName = (albumIndex: number, trackIndex: number) => {
   const value = albums.value[albumIndex].tracks[trackIndex].performerName;
+  const entries = splitFioEntries(value);
   let error = '';
   
   if (!value.trim()) {
     error = 'ФИО исполнителя обязательно для заполнения';
-  } else if (!checkMinWords(value, 3)) {
-    error = 'ФИО исполнителя должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
-  } else if (checkForbiddenWords(value)) {
+  } else if (!entries.length) {
+    error = 'ФИО исполнителя обязательно для заполнения';
+  } else if (entries.some(hasInvalidFioSymbols)) {
+    error = 'Удалите кавычки и спецсимволы из ФИО исполнителя (в каждом ФИО через запятую)';
+  } else if (entries.some(entry => !checkMinWords(entry, 3))) {
+    error = 'Каждое ФИО исполнителя через запятую должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
+  } else if (entries.some(checkForbiddenWords)) {
     error = 'В поле "ФИО исполнителей" запрещено использовать слова: "нет", "такой", "информации", "не", "знаю", "откуда"';
   }
   
@@ -1547,13 +1610,18 @@ const validateAlbumTrackPerformerName = (albumIndex: number, trackIndex: number)
 
 const validateAlbumTrackMusicAuthor = (albumIndex: number, trackIndex: number) => {
   const value = albums.value[albumIndex].tracks[trackIndex].musicAuthor;
+  const entries = splitFioEntries(value);
   let error = '';
   
   if (!value.trim()) {
     error = 'ФИО автора музыки обязательно для заполнения';
-  } else if (!checkMinWords(value, 3)) {
-    error = 'ФИО автора музыки должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
-  } else if (checkForbiddenWords(value)) {
+  } else if (!entries.length) {
+    error = 'ФИО автора музыки обязательно для заполнения';
+  } else if (entries.some(hasInvalidFioSymbols)) {
+    error = 'Удалите кавычки и спецсимволы из ФИО автора музыки (в каждом ФИО через запятую)';
+  } else if (entries.some(entry => !checkMinWords(entry, 3))) {
+    error = 'Каждое ФИО автора музыки через запятую должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
+  } else if (entries.some(checkForbiddenWords)) {
     error = 'В поле "ФИО авторов музыки" запрещено использовать слова: "нет", "такой", "информации", "не", "знаю", "откуда"';
   }
   
@@ -1563,13 +1631,18 @@ const validateAlbumTrackMusicAuthor = (albumIndex: number, trackIndex: number) =
 
 const validateAlbumTrackTextAuthor = (albumIndex: number, trackIndex: number) => {
   const value = albums.value[albumIndex].tracks[trackIndex].textAuthor;
+  const entries = splitFioEntries(value);
   let error = '';
   
   if (!value.trim()) {
     error = 'ФИО автора текста обязательно для заполнения';
-  } else if (!checkMinWords(value, 3)) {
-    error = 'ФИО автора текста должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
-  } else if (checkForbiddenWords(value)) {
+  } else if (!entries.length) {
+    error = 'ФИО автора текста обязательно для заполнения';
+  } else if (entries.some(hasInvalidFioSymbols)) {
+    error = 'Удалите кавычки и спецсимволы из ФИО автора текста (в каждом ФИО через запятую)';
+  } else if (entries.some(entry => !checkMinWords(entry, 3))) {
+    error = 'Каждое ФИО автора текста через запятую должно содержать минимум 3 слова (например: Иван Иванович Иванов)';
+  } else if (entries.some(checkForbiddenWords)) {
     error = 'В поле "ФИО авторов текста" запрещено использовать слова: "нет", "такой", "информации", "не", "знаю", "откуда"';
   }
   
@@ -1667,13 +1740,8 @@ const addSingleTrackWithFile = async () => {
     
     try {
       // Проверка размера файла
-      const maxSize = 50 * 1024 * 1024; // 50MB
       if (file.size === 0) {
         throw new Error('Файл имеет 0 байт. Проверьте файл и попробуйте снова.');
-      }
-      
-      if (file.size > maxSize) {
-        throw new Error(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(2)}MB). Максимальный размер - 50MB`);
       }
       
       if (!isAllowedTrackAudioFile(file)) {
@@ -1844,11 +1912,6 @@ const uploadAllSingles = async () => {
           throw new Error('Файл имеет 0 байт');
         }
         
-        const maxSize = 50 * 1024 * 1024;
-        if (file.size > maxSize) {
-          throw new Error(`Файл слишком большой (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-        }
-        
         if (!isAllowedTrackAudioFile(file)) {
           throw new Error(`Недопустимый формат файла: ${file.name}`);
         }
@@ -1951,11 +2014,6 @@ const uploadAllAlbumTracks = async () => {
           throw new Error('Недопустимый формат файла');
         }
         
-        const maxSize = 50 * 1024 * 1024;
-        if (file.size > maxSize) {
-          throw new Error('Файл слишком большой');
-        }
-        
         const fileId = generateAudioId('album', 0, album.tracks.length);
         await saveAudioToDB(file, fileId);
         
@@ -2051,11 +2109,6 @@ const addAlbumTrackWithFile = async (albumIndex: number) => {
         
         if (!isAllowedTrackAudioFile(file)) {
           throw new Error('Недопустимый формат файла');
-        }
-        
-        const maxSize = 50 * 1024 * 1024;
-        if (file.size > maxSize) {
-          throw new Error('Файл слишком большой');
         }
         
         const fileId = generateAudioId('album', albumIndex, album.tracks.length);

@@ -119,12 +119,34 @@
         </div>
       </div>
 
+      <div v-if="isCustomAmountPromo" class="form__group">
+        <label for="customPromoAmount" class="form__label button">Сумма по промокоду VAUVISION-PROMO</label>
+        <div class="form__bonus_input">
+          <el-input-number
+            v-model="formData.customPromoAmount"
+            :min="MINIMUM_AMOUNT"
+            :step="1"
+            :precision="0"
+            placeholder="Введите сумму от 1"
+            @change="handleCustomPromoAmountChange"
+            @input="validateField('customPromoAmount')"
+            size="large"
+            style="width: 200px;"
+            :disabled="uploadingFiles || isGeneratingContract"
+          />
+          <span class="form__bonus_hint">Минимальная сумма: {{ MINIMUM_AMOUNT }} {{ currencySymbol }}</span>
+        </div>
+        <div v-if="errors.customPromoAmount" class="error text_very">
+          {{ errors.customPromoAmount }}
+        </div>
+      </div>
+
       <!-- Бонусы -->
       <div class="form__group">
         <label for="bonuses" class="form__label button">Бонусы</label>
         <ul class="form__hint_list">
           <li class="form__hint_item">
-            <p class="form__hint text_small">У вас на балансе {{ userBonuses }} бонусов. 1 бонус = 1 {{ currencySymbol }}. За один заказ можно списать не более 50% от суммы заказа после скидки по промокоду (если есть).</p>
+            <p class="form__hint text_small">У вас на балансе {{ userBonuses }} бонусов. {{ bonusExchangeHint }}. За один заказ можно списать не более 50% от суммы заказа после скидки по промокоду (если есть).</p>
           </li>
           <li class="form__hint_item">
             <p class="form__hint text_small">Новые бонусы рассчитываются от финальной стоимости с учётом скидки.</p>
@@ -174,7 +196,7 @@
         <div class="quiz__form_sum_bonus">
           <p class="quiz__form_sum_bonus_text">Будет начислено бонусов:</p>
           <div class="quiz__form_sum_bonus_total">
-            <span>{{ formatPrice(Math.round(finalAmount * 0.07)) }}</span>
+            <span>{{ formatPrice(accruedBonusesTotal) }}</span>
           </div>
         </div>
       </div>
@@ -249,8 +271,9 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { ElSelect, ElOption, ElInput, ElCheckbox, ElInputNumber, ElMessage, ElButton } from 'element-plus';
 import { sendRequest, FileRequest } from '@/utils/api';
 import { buildInstrumentalsFromQuiz2 } from '@/utils/quizInstrumentalsSummary';
+import { validateQuizAlias } from '@/utils/quizAlias';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -272,6 +295,9 @@ interface UploadedFileInfo {
   path?: string;
   track_number?: number;
   album_number?: number;
+  trackIndex?: number;
+  albumIndex?: number;
+  sourceFileName?: string;
 }
 
 // Ключи для хранения
@@ -297,6 +323,7 @@ const isLoading = ref(true);
 const promoLoading = ref(false);
 const promoApplied = ref(false);
 const promoDiscount = ref(0);
+const CUSTOM_AMOUNT_PROMO_CODE = 'VAUVISION-PROMO';
 
 // Состояние отправки файлов
 const uploadingFiles = ref(false);
@@ -320,6 +347,7 @@ const formData = reactive({
   promoPlan: '',
   bandlinkUrl: '',
   promoCode: '',
+  customPromoAmount: null as number | null,
   usePartnerBonuses: false,
   usedBonuses: 0,
   confirmNoRightsViolation: false
@@ -333,6 +361,7 @@ const errors = reactive({
   promoPlan: '',
   bandlinkUrl: '',
   promoCode: '',
+  customPromoAmount: '',
   usePartnerBonuses: '',
   usedBonuses: '',
   confirmNoRightsViolation: ''
@@ -353,12 +382,51 @@ const platformOptions = [
 const originalTotalAmount = ref(0);
 const currencySymbol = ref('₽');
 const userBonuses = ref(0);
+const BONUS_RATE = 0.07;
+const USD_BONUS_MULTIPLIER = 100;
+const USD_BONUS_VALUE = 0.013;
 
 // Минимальная сумма к оплате
 const MINIMUM_AMOUNT = 1;
 
+const roundCurrency = (value: number): number => {
+  return Math.round(value * 100) / 100;
+};
+
+const isUsdCurrency = computed(() => {
+  const normalized = String(currencySymbol.value || '').trim().toUpperCase();
+  return normalized.includes('$') || normalized === 'USD' || normalized === 'US$';
+});
+
+const bonusValuePerPoint = computed(() => (isUsdCurrency.value ? USD_BONUS_VALUE : 1));
+
+const bonusesToCurrency = (bonuses: number): number => {
+  const safeBonuses = Math.max(0, Number(bonuses) || 0);
+  return roundCurrency(safeBonuses * bonusValuePerPoint.value);
+};
+
+const bonusExchangeHint = computed(() =>
+  isUsdCurrency.value ? '100 бонусов = 1,3 $' : `1 бонус = 1 ${currencySymbol.value}`,
+);
+
+const normalizePromoCode = (code: string): string =>
+  String(code || '').trim().toUpperCase();
+
+const isCustomAmountPromo = computed(() =>
+  promoApplied.value &&
+  normalizePromoCode(formData.promoCode) === CUSTOM_AMOUNT_PROMO_CODE,
+);
+
 // Сумма заказа после промокода, до списания бонусов
 const orderTotalAfterPromo = computed(() => {
+  if (isCustomAmountPromo.value) {
+    const customAmount = Number(formData.customPromoAmount);
+    if (!Number.isFinite(customAmount) || customAmount < MINIMUM_AMOUNT) {
+      return 0;
+    }
+    return Math.floor(customAmount);
+  }
+
   let total = originalTotalAmount.value;
   if (promoDiscount.value > 0) {
     total = Math.floor((total * (100 - promoDiscount.value)) / 100);
@@ -369,16 +437,29 @@ const orderTotalAfterPromo = computed(() => {
 // Не более 50% от суммы после скидки, не выше баланса, с учётом минимального платежа
 const maxBonuses = computed(() => {
   const order = orderTotalAfterPromo.value;
-  const maxByHalfOrder = Math.floor(order * 0.5);
-  const maxByMinPayment = Math.max(0, order - MINIMUM_AMOUNT);
+  const perBonus = bonusValuePerPoint.value;
+  if (perBonus <= 0) return 0;
+  const maxByHalfOrder = Math.floor((order * 0.5) / perBonus);
+  const maxByMinPayment = Math.floor(Math.max(0, order - MINIMUM_AMOUNT) / perBonus);
   return Math.min(userBonuses.value, maxByHalfOrder, maxByMinPayment);
 });
 
 // Финальная сумма с учётом скидки и бонусов
 const finalAmount = computed(() => {
   const total = orderTotalAfterPromo.value;
-  const used = formData.usedBonuses || 0;
-  return Math.max(MINIMUM_AMOUNT, total - used);
+  if (total < MINIMUM_AMOUNT) {
+    return 0;
+  }
+  const usedAmount = bonusesToCurrency(formData.usedBonuses || 0);
+  return Math.max(MINIMUM_AMOUNT, roundCurrency(total - usedAmount));
+});
+
+const accruedBonusesTotal = computed(() => {
+  const baseBonuses = finalAmount.value * BONUS_RATE;
+  if (isUsdCurrency.value) {
+    return Math.ceil(baseBonuses * USD_BONUS_MULTIPLIER);
+  }
+  return Math.round(baseBonuses);
 });
 
 // Есть ли скидка (для отображения перечеркнутой цены)
@@ -389,12 +470,12 @@ const hasDiscount = computed(() => {
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
-    console.log('Quiz6: Initializing databases...');
+    console.log('Quiz6: Initializing stores...');
     
     // Основная БД с версией 2
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz6: Upgrading DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz6: Upgrading store from version ${oldVersion} to ${newVersion}`);
         
         if (oldVersion < 2) {
           if (db.objectStoreNames.contains('quizState')) {
@@ -410,7 +491,7 @@ const initDB = async () => {
     // Аудио БД с версией 2
     audioDB.value = await openDB(AUDIO_DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz6: Upgrading Audio DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz6: Upgrading Audio store from version ${oldVersion} to ${newVersion}`);
         
         if (oldVersion < 2) {
           if (db.objectStoreNames.contains('audio')) {
@@ -427,7 +508,7 @@ const initDB = async () => {
     // Файловая БД с версией 2
     filesDB.value = await openDB(FILES_DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz6: Upgrading Files DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz6: Upgrading Files store from version ${oldVersion} to ${newVersion}`);
         
         if (oldVersion < 2) {
           if (db.objectStoreNames.contains('files')) {
@@ -445,7 +526,7 @@ const initDB = async () => {
     dbInitialized.value = true;
     audioDBInitialized.value = true;
     filesDBInitialized.value = true;
-    console.log('Quiz6: Databases initialized successfully');
+    console.log('Quiz6: stores initialized successfully');
     
   } catch (error) {
     console.error('Quiz6: Error initializing databases:', error);
@@ -476,7 +557,7 @@ const safeDBOperation = async <T>(
   }
   
   if (!initialized || !db) {
-    console.log(`Quiz6: ${dbType} DB not initialized`);
+    console.log(`Quiz6: ${dbType} store not initialized`);
     return fallback;
   }
   
@@ -515,9 +596,10 @@ const createSafeStateCopy = () => {
   /** После промо, до списания бонусов — как orderTotalAfterPromo / отправка на бэкенд */
   const snapOrderAfterPromo = orderTotalAfterPromo.value;
   const usedBonusesSnap = Number(formData.usedBonuses || 0);
+  const usedBonusesAmountSnap = bonusesToCurrency(usedBonusesSnap);
   const snapFinalPayable = Math.max(
     MINIMUM_AMOUNT,
-    snapOrderAfterPromo - usedBonusesSnap
+    roundCurrency(snapOrderAfterPromo - usedBonusesAmountSnap)
   );
 
   return {
@@ -531,6 +613,8 @@ const createSafeStateCopy = () => {
     orderTotalAfterPromo: snapOrderAfterPromo,
     /** Итог к оплате после бонусов — как в UI / newDock sumOrder */
     finalPayableAmount: snapFinalPayable,
+    /** Денежный эквивалент списанных бонусов */
+    bonusSpendAmount: usedBonusesAmountSnap,
     timestamp: Date.now()
   };
 };
@@ -543,7 +627,7 @@ const saveStateToDB = async () => {
     async () => {
       const stateToSave = createSafeStateCopy();
       await quizDB.value.put('quizState', stateToSave);
-      console.log('Quiz6: State saved to IndexedDB');
+      console.log('Quiz6: State saved to in-memory store');
       
       window.dispatchEvent(new CustomEvent('quiz-data-updated'));
     },
@@ -554,7 +638,7 @@ const saveStateToDB = async () => {
 // Загрузка состояния из IndexedDB
 const loadStateFromDB = async () => {
   if (!dbInitialized.value) {
-    console.log('Quiz6: DB not initialized, skipping load');
+    console.log('Quiz6: store not initialized, skipping load');
     return;
   }
   
@@ -562,7 +646,7 @@ const loadStateFromDB = async () => {
     async () => {
       const savedState = await quizDB.value.get('quizState', STORAGE_KEY);
       if (savedState) {
-        console.log('Quiz6: Loading from IndexedDB:', savedState);
+        console.log('Quiz6: Loading from in-memory store:', savedState);
         
         if (savedState.formData) {
           formData.platforms = savedState.formData.platforms || [];
@@ -668,6 +752,14 @@ const checkPromoCode = async (code: string) => {
     await saveStateToDB();
     return;
   }
+
+  if (normalizePromoCode(code) === CUSTOM_AMOUNT_PROMO_CODE) {
+    promoApplied.value = true;
+    promoDiscount.value = 0;
+    errors.customPromoAmount = '';
+    await saveStateToDB();
+    return;
+  }
   
   promoLoading.value = true;
   
@@ -694,9 +786,15 @@ const checkPromoCode = async (code: string) => {
       
       ElMessage.success(message);
       await updatePriceWithPromo();
+      if (!isCustomAmountPromo.value) {
+        formData.customPromoAmount = null;
+        errors.customPromoAmount = '';
+      }
     } else {
       promoApplied.value = false;
       promoDiscount.value = 0;
+      formData.customPromoAmount = null;
+      errors.customPromoAmount = '';
       ElMessage.error(response.data.message || 'Неверный промокод');
       await updatePriceWithPromo();
     }
@@ -704,6 +802,8 @@ const checkPromoCode = async (code: string) => {
     console.error('Quiz6: Ошибка применения промокода:', error);
     promoApplied.value = false;
     promoDiscount.value = 0;
+    formData.customPromoAmount = null;
+    errors.customPromoAmount = '';
     ElMessage.error('Ошибка при проверке промокода');
     await updatePriceWithPromo();
   } finally {
@@ -732,6 +832,8 @@ const removePromoCode = async () => {
   promoApplied.value = false;
   promoDiscount.value = 0;
   formData.promoCode = '';
+  formData.customPromoAmount = null;
+  errors.customPromoAmount = '';
   
   await updatePriceWithPromo();
   await saveStateToDB();
@@ -756,6 +858,30 @@ const handleBonusesChange = (value: number | undefined) => {
   }
   
   validateField('usedBonuses');
+  debouncedSave();
+};
+
+const handleCustomPromoAmountChange = (value: number | undefined) => {
+  if (value === undefined || value === null) {
+    formData.customPromoAmount = null;
+    validateField('customPromoAmount');
+    debouncedSave();
+    return;
+  }
+
+  if (value < MINIMUM_AMOUNT) {
+    formData.customPromoAmount = MINIMUM_AMOUNT;
+  } else {
+    formData.customPromoAmount = Math.floor(value);
+  }
+
+  validateField('customPromoAmount');
+
+  if (formData.usedBonuses > maxBonuses.value) {
+    formData.usedBonuses = maxBonuses.value;
+    validateField('usedBonuses');
+  }
+
   debouncedSave();
 };
 
@@ -809,6 +935,15 @@ const validateField = (fieldName: keyof typeof errors): boolean => {
         errorMessage = `У вас доступно только ${userBonuses.value} бонусов`;
       } else if (formData.usedBonuses > maxBonuses.value) {
         errorMessage = `Нельзя списать больше ${maxBonuses.value} бонусов для этого заказа`;
+      }
+      break;
+
+    case 'customPromoAmount':
+      if (isCustomAmountPromo.value) {
+        const customAmount = Number(formData.customPromoAmount);
+        if (!Number.isFinite(customAmount) || customAmount < MINIMUM_AMOUNT) {
+          errorMessage = `Введите сумму не меньше ${MINIMUM_AMOUNT}`;
+        }
       }
       break;
       
@@ -881,6 +1016,13 @@ const validateForm = (): boolean => {
       isValid = false;
     }
   }
+
+  if (isCustomAmountPromo.value) {
+    const customPromoAmountValid = validateField('customPromoAmount');
+    if (!customPromoAmountValid) {
+      isValid = false;
+    }
+  }
   
   debouncedSave();
   
@@ -905,16 +1047,25 @@ const isReadyForNextStep = computed(() => {
   if (formData.bandlinkUrl.trim()) {
     bandlinkUrlValid = isValidUrl(formData.bandlinkUrl) && formData.bandlinkUrl.includes('band.link');
   }
+
+  let customPromoAmountValid = true;
+  if (isCustomAmountPromo.value) {
+    const customAmount = Number(formData.customPromoAmount);
+    customPromoAmountValid =
+      Number.isFinite(customAmount) &&
+      customAmount >= MINIMUM_AMOUNT;
+  }
   
   return requiredFieldsValid && 
          otherPlatformValid && 
-         bandlinkUrlValid;
+         bandlinkUrlValid &&
+         customPromoAmountValid;
 });
 
 // Получение обложки из IndexedDB
 const getCoverFile = async (): Promise<{ file: File; type: 'single' | 'album' } | null> => {
   if (!filesDBInitialized.value) {
-    console.log('Quiz6: Files DB not initialized');
+    console.log('Quiz6: Files store not initialized');
     return null;
   }
   
@@ -932,13 +1083,26 @@ const getCoverFile = async (): Promise<{ file: File; type: 'single' | 'album' } 
       const stored = await filesDB.value.get('files', quiz3State.coverFileInfo.fileId);
       
       if (stored) {
-        console.log('Quiz6: Cover file loaded from DB:', stored.fileName);
+        console.log('Quiz6: Cover file loaded from store:', stored.fileName);
         const file = new File([stored.data], stored.fileName, { type: stored.fileType });
-        
-        const quiz1State = await quizDB.value.get('quizState', 'quiz1_state');
-        const albumCount = quiz1State?.albumCount || 0;
-        
-        const type = albumCount > 0 ? 'album' : 'single';
+
+        const quiz2State = await quizDB.value.get('quizState', 'quiz2_state');
+        const hasAlbumTracks = Array.isArray(quiz2State?.albums)
+          && quiz2State.albums.some((album: any) =>
+            Array.isArray(album?.tracks) && album.tracks.some((track: any) =>
+              Boolean(track?.audioFileId || track?.audioFileName),
+            ),
+          );
+        const hasSingleTracks = Array.isArray(quiz2State?.singleTracks)
+          && quiz2State.singleTracks.some((track: any) =>
+            Boolean(track?.audioFileId || track?.audioFileName),
+          );
+
+        let type: 'single' | 'album' = hasAlbumTracks ? 'album' : 'single';
+        if (!hasAlbumTracks && !hasSingleTracks) {
+          const quiz1State = await quizDB.value.get('quizState', 'quiz1_state');
+          type = (quiz1State?.albumCount || 0) > 0 ? 'album' : 'single';
+        }
         
         return { file, type };
       }
@@ -955,7 +1119,7 @@ const getAllAudioFiles = async (): Promise<Array<{ file: File; type: 'single' | 
   const files: Array<{ file: File; type: 'single' | 'album'; trackIndex?: number; albumIndex?: number }> = [];
   
   if (!audioDBInitialized.value) {
-    console.log('Quiz6: Audio DB not initialized');
+    console.log('Quiz6: Audio store not initialized');
     return files;
   }
   
@@ -1033,53 +1197,11 @@ const getAllAudioFiles = async (): Promise<Array<{ file: File; type: 'single' | 
   return files;
 };
 
-// Очистка старых номеров перед отправкой
-const clearOldNumbers = async (): Promise<void> => {
-  await safeDBOperation(
-    async () => {
-      console.log('Quiz6: Clearing old product numbers...');
-      
-      const quiz2State = await quizDB.value.get('quizState', 'quiz2_state');
-      
-      if (!quiz2State) {
-        console.log('Quiz6: No Quiz2 state to clear');
-        return;
-      }
-      
-      if (quiz2State.singleTracks && Array.isArray(quiz2State.singleTracks)) {
-        quiz2State.singleTracks.forEach((track: any) => {
-          if (track.product_id) {
-            console.log(`Quiz6: Clearing product_id ${track.product_id} from single track`);
-            delete track.product_id;
-          }
-        });
-      }
-      
-      if (quiz2State.albums && Array.isArray(quiz2State.albums)) {
-        quiz2State.albums.forEach((album: any) => {
-          if (album.tracks && Array.isArray(album.tracks)) {
-            album.tracks.forEach((track: any) => {
-              if (track.product_id) {
-                console.log(`Quiz6: Clearing product_id ${track.product_id} from album track`);
-                delete track.product_id;
-              }
-            });
-          }
-        });
-      }
-      
-      await quizDB.value.put('quizState', quiz2State);
-      console.log('Quiz6: Old product numbers cleared');
-    },
-    null
-  );
-};
-
 // Сохранение полученных номеров
 const saveProductNumbers = async (uploadedFiles: UploadedFileInfo[]): Promise<void> => {
   await safeDBOperation(
     async () => {
-      console.log('Quiz6: Saving product numbers:', uploadedFiles);
+      console.log('Quiz6: Сохраняем product_id для треков:', uploadedFiles);
       
       const quiz2State = await quizDB.value.get('quizState', 'quiz2_state');
       
@@ -1094,49 +1216,91 @@ const saveProductNumbers = async (uploadedFiles: UploadedFileInfo[]): Promise<vo
         const fileName = file.file_name;
         const productId = file.product_id;
         const fileType = file.type;
-        
-        console.log(`Quiz6: Saving product_id ${productId} for ${fileType} file: ${fileName}`);
-        
+        const sourceFileName = file.sourceFileName || file.file_name;
+        const normalizeName = (name: string): string =>
+          String(name || '').trim().replace(/^.*[\\/]/, '').toLowerCase();
+
+        console.log(
+          `Quiz6: Пробуем сохранить product_id ${productId} для ${fileType} файла: ${fileName} (исходное имя: ${sourceFileName})`,
+        );
+
         if (fileType === 'single') {
-          // Ищем в синглах
           if (quiz2State.singleTracks && Array.isArray(quiz2State.singleTracks)) {
-            const singleTrack = quiz2State.singleTracks.find((track: any) => 
-              track.audioFileName === fileName
+            if (
+              file.trackIndex !== undefined &&
+              file.trackIndex >= 0 &&
+              file.trackIndex < quiz2State.singleTracks.length
+            ) {
+              quiz2State.singleTracks[file.trackIndex].product_id = productId;
+              updated = true;
+              console.log(
+                `Quiz6: product_id назначен по индексу сингла ${file.trackIndex}: ${productId}`,
+              );
+              return;
+            }
+
+            const normalizedTarget = normalizeName(sourceFileName || fileName);
+            const singleTrack = quiz2State.singleTracks.find(
+              (track: any) => normalizeName(track.audioFileName) === normalizedTarget,
             );
-            
+
             if (singleTrack) {
-              console.log(`Quiz6: Found matching single track, saving product_id ${productId}`);
               singleTrack.product_id = productId;
               updated = true;
+              console.log(`Quiz6: product_id назначен по имени файла: ${normalizedTarget}`);
             } else {
-              console.log(`Quiz6: No matching single track found for file: ${fileName}`);
+              console.warn(
+                `Quiz6: Не найден совпадающий сингл для файла "${fileName}" / "${sourceFileName}"`,
+              );
             }
           }
         } else if (fileType === 'album') {
-          // Ищем в альбомах
           if (quiz2State.albums && Array.isArray(quiz2State.albums)) {
-            let found = false;
-            
-            for (const album of quiz2State.albums) {
-              if (album.tracks && Array.isArray(album.tracks)) {
-                const albumTrack = album.tracks.find((track: any) => 
-                  track.audioFileName === fileName
+            if (
+              file.albumIndex !== undefined &&
+              file.trackIndex !== undefined &&
+              file.albumIndex >= 0 &&
+              file.albumIndex < quiz2State.albums.length
+            ) {
+              const album = quiz2State.albums[file.albumIndex];
+              if (
+                album?.tracks &&
+                Array.isArray(album.tracks) &&
+                file.trackIndex >= 0 &&
+                file.trackIndex < album.tracks.length
+              ) {
+                album.tracks[file.trackIndex].product_id = productId;
+                updated = true;
+                console.log(
+                  `Quiz6: product_id назначен по индексам альбома/трека ${file.albumIndex}/${file.trackIndex}: ${productId}`,
                 );
-                
-                if (albumTrack) {
-                  console.log(`Quiz6: Found matching album track, saving product_id ${productId}`);
-                  albumTrack.product_id = productId;
-                  updated = true;
-                  found = true;
-                  break;
-                }
+                return;
               }
-              
-              if (found) break;
             }
-            
-            if (!found) {
-              console.log(`Quiz6: No matching album track found for file: ${fileName}`);
+
+            const normalizedTarget = normalizeName(sourceFileName || fileName);
+            let foundByName = false;
+
+            for (const album of quiz2State.albums) {
+              if (!album.tracks || !Array.isArray(album.tracks)) continue;
+
+              const albumTrack = album.tracks.find(
+                (track: any) => normalizeName(track.audioFileName) === normalizedTarget,
+              );
+
+              if (albumTrack) {
+                albumTrack.product_id = productId;
+                updated = true;
+                foundByName = true;
+                console.log(`Quiz6: product_id назначен по имени файла альбома: ${normalizedTarget}`);
+                break;
+              }
+            }
+
+            if (!foundByName) {
+              console.warn(
+                `Quiz6: Не найден совпадающий трек альбома для файла "${fileName}" / "${sourceFileName}"`,
+              );
             }
           }
         }
@@ -1145,10 +1309,58 @@ const saveProductNumbers = async (uploadedFiles: UploadedFileInfo[]): Promise<vo
       if (updated) {
         // Сохраняем обновленное состояние Quiz2
         await quizDB.value.put('quizState', quiz2State);
-        console.log('Quiz6: Product numbers saved successfully to quiz2_state');
+        console.log('Quiz6: product_id успешно сохранены в quiz2_state');
       } else {
-        console.log('Quiz6: No tracks were updated');
+        console.log('Quiz6: Не удалось обновить ни одного трека');
       }
+    },
+    null
+  );
+};
+
+const assertProductIdsAfterUpload = async (): Promise<void> => {
+  await safeDBOperation(
+    async () => {
+      const quiz2State = await quizDB.value.get('quizState', 'quiz2_state');
+      if (!quiz2State) {
+        throw new Error('Не удалось проверить загруженные треки: отсутствует состояние шага 2.');
+      }
+
+      const missingSingles: string[] = [];
+      const missingAlbums: string[] = [];
+
+      if (Array.isArray(quiz2State.singleTracks)) {
+        quiz2State.singleTracks.forEach((track: any, index: number) => {
+          if (track.audioFileId && !track.product_id) {
+            missingSingles.push(track.audioFileName || `single-${index + 1}`);
+          }
+        });
+      }
+
+      if (Array.isArray(quiz2State.albums)) {
+        quiz2State.albums.forEach((album: any, albumIndex: number) => {
+          if (!Array.isArray(album?.tracks)) return;
+          album.tracks.forEach((track: any, trackIndex: number) => {
+            if (track.audioFileId && !track.product_id) {
+              missingAlbums.push(
+                track.audioFileName || `album-${albumIndex + 1}-track-${trackIndex + 1}`,
+              );
+            }
+          });
+        });
+      }
+
+      if (missingSingles.length > 0 || missingAlbums.length > 0) {
+        console.error('Quiz6: После загрузки не хватает product_id', {
+          singles: missingSingles,
+          albums: missingAlbums,
+        });
+        throw new Error(
+          'Часть аудиофайлов не получила идентификаторы на сервере. Повторите отправку файлов.',
+        );
+      }
+
+      console.log('Quiz6: Проверка целостности product_id пройдена');
     },
     null
   );
@@ -1159,10 +1371,47 @@ const getReadableUploadErrorMessage = (error: any, fileName?: string): string =>
   const cleanName = fileName ? ` "${fileName}"` : '';
   const status = Number(error?.response?.status || 0);
   const code = String(error?.code || '');
-  const serverMessage = String(error?.response?.data?.message || '').toLowerCase();
+  const responseData = error?.response?.data;
+  const rawServerMessage = String(
+    responseData?.error?.message || responseData?.message || '',
+  ).trim();
+  const serverMessage = rawServerMessage.toLowerCase();
 
-  if (status === 413 || serverMessage.includes('size') || serverMessage.includes('too large')) {
+  if (
+    status === 413 ||
+    serverMessage.includes('payload too large') ||
+    serverMessage.includes('too large') ||
+    serverMessage.includes('max size') ||
+    serverMessage.includes('maximum size') ||
+    serverMessage.includes('слишком большой') ||
+    serverMessage.includes('слишком велик') ||
+    serverMessage.includes('размер файла')
+  ) {
     return `Файл${cleanName} слишком большой. Уменьшите его размер и попробуйте снова.`;
+  }
+
+  if (
+    serverMessage.includes('sample rate') ||
+    serverMessage.includes('khz') ||
+    serverMessage.includes('hz') ||
+    serverMessage.includes('bit depth') ||
+    serverMessage.includes('bitrate') ||
+    serverMessage.includes('codec') ||
+    serverMessage.includes('not support') ||
+    serverMessage.includes('unsupported') ||
+    serverMessage.includes('format') ||
+    serverMessage.includes('формат') ||
+    serverMessage.includes('частота') ||
+    serverMessage.includes('битност') ||
+    serverMessage.includes('кодек')
+  ) {
+    return rawServerMessage
+      ? `Файл${cleanName} отклонён: ${rawServerMessage}.`
+      : `Файл${cleanName} не прошел проверку формата аудио (частота дискретизации, битность или кодек).`;
+  }
+
+  if (rawServerMessage && (status === 400 || status === 415 || status === 422)) {
+    return `Файл${cleanName} отклонён сервером: ${rawServerMessage}.`;
   }
 
   if (status === 400 || status === 415 || status === 422) {
@@ -1289,7 +1538,7 @@ const clearOldContractData = async (): Promise<void> => {
         delete quiz6State.contractData;
         delete quiz6State.contractLoadedFromBackend;
         await quizDB.value.put('quizState', quiz6State);
-        console.log('✅ contractData удален из состояния Quiz6 в БД');
+        console.log('✅ contractData удален из состояния Quiz6 в store');
       }
       
       console.log('Quiz6: Очистка завершена');
@@ -1316,8 +1565,6 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
   uploadProgress.value = 0;
   
   console.log(`Quiz6: Starting upload of ${audioFiles.length} audio files`);
-  
-  await clearOldNumbers();
   
   const uploadedFilesData: UploadedFileInfo[] = [];
   
@@ -1349,7 +1596,10 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
                   type: 'album',
                   path: uploadedData.path, // Теперь path существует в интерфейсе
                   track_number: trackIndex !== undefined ? trackIndex + 1 : undefined,
-                  album_number: albumIndex !== undefined ? albumIndex + 1 : undefined
+                  album_number: albumIndex !== undefined ? albumIndex + 1 : undefined,
+                  trackIndex,
+                  albumIndex,
+                  sourceFileName: file.name,
                 };
                 
                 uploadedFilesData.push(fileInfo);
@@ -1361,7 +1611,10 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
                     file_name: item.file_name,
                     product_id: item.product_id,
                     type: 'album',
-                    path: item.path
+                    path: item.path,
+                    trackIndex,
+                    albumIndex,
+                    sourceFileName: file.name,
                   };
                   uploadedFilesData.push(fileInfo);
                 });
@@ -1375,7 +1628,9 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
                     file_name: item.file_name,
                     product_id: item.product_id,
                     type: 'single',
-                    path: item.path
+                    path: item.path,
+                    trackIndex,
+                    sourceFileName: file.name,
                   };
                   uploadedFilesData.push(fileInfo);
                 });
@@ -1386,7 +1641,9 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
                   file_name: uploadedData.file_name,
                   product_id: uploadedData.product_id,
                   type: 'single',
-                  path: uploadedData.path
+                  path: uploadedData.path,
+                  trackIndex,
+                  sourceFileName: file.name,
                 };
                 uploadedFilesData.push(fileInfo);
                 console.log(`Quiz6: Added single file as object: ${fileInfo.file_name}`);
@@ -1402,9 +1659,16 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
       uploadProgress.value = Math.round(((i + 1) / audioFiles.length) * 100);
     }
     
+    if (uploadedFilesData.length < audioFiles.length) {
+      throw new Error(
+        'Не удалось получить идентификаторы всех треков с сервера. Повторите отправку.',
+      );
+    }
+
     if (uploadedFilesData.length > 0) {
       console.log('Quiz6: Saving product numbers:', uploadedFilesData);
       await saveProductNumbers(uploadedFilesData);
+      await assertProductIdsAfterUpload();
     } else {
       console.log('Quiz6: No product numbers to save');
     }
@@ -1424,7 +1688,13 @@ const uploadAllAudioFiles = async (): Promise<UploadedFileInfo[]> => {
 // Функция для очистки полей от запрещенных символов
 const cleanField = (value: string): string => {
   if (!value) return '';
-  return value.replace(/[\/\\&@+=<>\[\]{}|~?*]/g, ' ').replace(/\s+/g, ' ').trim();
+  return value.replace(/[\/\\@+=<>\[\]{}|~?*]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+// Для полей, где спецсимволы допустимы (псевдонимы/названия), сохраняем исходный текст.
+const preserveFreeTextField = (value: string): string => {
+  if (!value) return '';
+  return String(value).trim();
 };
 
 // Отправка обложки и всех данных в newDock.php
@@ -1440,12 +1710,13 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
   
   const formDataToSend = new FormData();
   
-  console.log('Загружаем данные из IndexedDB...');
+  console.log('Загружаем данные из in-memory store...');
   const quiz1State = await quizDB.value.get('quizState', 'quiz1_state');
   const quiz2State = await quizDB.value.get('quizState', 'quiz2_state');
   const quiz3State = await quizDB.value.get('quizState', 'quiz3_state');
   const quiz4State = await quizDB.value.get('quizState', 'quiz4_state');
   const quiz5State = await quizDB.value.get('quizState', 'quiz5_state');
+  const quiz4FormData = quiz4State?.formData || null;
   
   console.log('✅ Quiz1 state загружен:', !!quiz1State);
   console.log('✅ Quiz2 state загружен:', !!quiz2State);
@@ -1453,15 +1724,31 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
   console.log('✅ Quiz4 state загружен:', !!quiz4State);
   console.log('✅ Quiz5 state загружен:', !!quiz5State);
   
+  let hasAlbumsInOrder = Array.isArray(quiz2State?.albums) && quiz2State.albums.length > 0;
+
   // --- Данные из Quiz1 ---
   if (quiz1State) {
+    const singleTracks = Array.isArray(quiz2State?.singleTracks)
+      ? quiz2State.singleTracks
+      : [];
+    const albums = Array.isArray(quiz2State?.albums)
+      ? quiz2State.albums
+      : [];
+    const singleCountEffective = singleTracks.length > 0
+      ? singleTracks.length
+      : (quiz1State.singleCount || 0);
+    const albumCountEffective = albums.length > 0
+      ? albums.length
+      : (quiz1State.albumCount || 0);
+    hasAlbumsInOrder = albumCountEffective > 0;
+
     console.log('📝 Добавляем данные Quiz1:');
-    formDataToSend.append('check-single', quiz1State.singleCount > 0 ? 'on' : 'off');
-    formDataToSend.append('check-album', quiz1State.albumCount > 0 ? 'on' : 'off');
+    formDataToSend.append('check-single', singleCountEffective > 0 ? 'on' : 'off');
+    formDataToSend.append('check-album', albumCountEffective > 0 ? 'on' : 'off');
     formDataToSend.append('check-klip', quiz1State.clipCount > 0 ? 'on' : 'off');
     formDataToSend.append('check-karta', quiz1State.cardCount > 0 ? 'on' : 'off');
-    formDataToSend.append('countSingle', String(quiz1State.singleCount || 0));
-    formDataToSend.append('countAlbum', String(quiz1State.albumCount || 0));
+    formDataToSend.append('countSingle', String(singleCountEffective));
+    formDataToSend.append('countAlbum', String(albumCountEffective));
   }
 
   // --- Данные из Quiz2 (СИНГЛЫ) ---
@@ -1472,13 +1759,19 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
         // Используем только ключи для СИНГЛОВ
         formDataToSend.append('trackID[]', track.product_id);
         formDataToSend.append(`path-file[${track.product_id}]`, track.audioFileName || '');
-        formDataToSend.append(`name-file[${track.product_id}]`, track.audioFileName || '');
-        formDataToSend.append(`artist[${track.product_id}]`, cleanField(track.performerName || ''));
+        formDataToSend.append(
+          `name-file[${track.product_id}]`,
+          preserveFreeTextField(track.trackName || track.audioFileName || ''),
+        );
+        formDataToSend.append(
+          `artist[${track.product_id}]`,
+          preserveFreeTextField(track.performerName || ''),
+        );
         formDataToSend.append(`autor-music[${track.product_id}]`, cleanField(track.musicAuthor || ''));
         formDataToSend.append(`autor-words[${track.product_id}]`, cleanField(track.textAuthor || ''));
         formDataToSend.append(
           `autor-files[${track.product_id}]`,
-          cleanField(track.trackName || track.performerName || ''),
+          preserveFreeTextField(track.trackName || ''),
         );
         console.log(`  - Трек ${index + 1}: ID=${track.product_id}, Name=${track.audioFileName}`);
       }
@@ -1496,11 +1789,20 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
             // Используем только ключи для АЛЬБОМОВ
             formDataToSend.append('albumID[]', track.product_id);
             formDataToSend.append(`path-file-album[${track.product_id}]`, track.audioFileName || '');
-            formDataToSend.append(`name-file-album[${track.product_id}]`, track.audioFileName || '');
-            formDataToSend.append(`artist-album[${track.product_id}]`, cleanField(track.performerName || ''));
+            formDataToSend.append(
+              `name-file-album[${track.product_id}]`,
+              preserveFreeTextField(track.trackName || track.audioFileName || ''),
+            );
+            formDataToSend.append(
+              `artist-album[${track.product_id}]`,
+              preserveFreeTextField(track.performerName || ''),
+            );
             formDataToSend.append(`autor-music-album[${track.product_id}]`, cleanField(track.musicAuthor || ''));
             formDataToSend.append(`autor-words-album[${track.product_id}]`, cleanField(track.textAuthor || ''));
-            formDataToSend.append(`autor-files-album[${track.product_id}]`, cleanField(track.trackName || ''));
+            formDataToSend.append(
+              `autor-files-album[${track.product_id}]`,
+              preserveFreeTextField(track.trackName || ''),
+            );
             console.log(`    Трек ${trackIndex + 1}: ID=${track.product_id}, Name=${track.audioFileName}`);
           }
         });
@@ -1523,8 +1825,13 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
 
     const matQuiz3 = f.hasProfanity === 'yes' ? '12' : '13';
     
-    formDataToSend.append('alias', cleanField(f.performerName || ''));
-    formDataToSend.append('name-relize', cleanField(f.releaseName || ''));
+    const aliasValidation = validateQuizAlias(f.performerName || '');
+    if (!aliasValidation.ok) {
+      throw new Error(aliasValidation.message);
+    }
+    const validatedAlias = aliasValidation.value;
+    formDataToSend.append('alias', validatedAlias);
+    formDataToSend.append('name-relize', preserveFreeTextField(f.releaseName || ''));
     formDataToSend.append('kuda-reliz1', sk);
     formDataToSend.append('kuda-reliz', sk);
     formDataToSend.append('others-kuda', ok);
@@ -1539,26 +1846,27 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     formDataToSend.append('vk', f.vkLink || '');
     formDataToSend.append('email-clear', f.email || '');
     
-    // Эти поля, вероятно, для альбомов, но оставим их здесь, т.к. бэкенд может их игнорировать, если нет альбомов
-    formDataToSend.append('alias-album', cleanField(f.performerName || ''));
-    formDataToSend.append('name-relize-album', cleanField(f.releaseName || 'Альбом'));
-    formDataToSend.append('kuda-reliz-album1', sk);
-    formDataToSend.append('kuda-reliz-album', sk);
-    formDataToSend.append('others-kuda-album', ok);
-    formDataToSend.append('calendar-reliz-album', f.releaseDate || '');
-    formDataToSend.append('mat-album1', matQuiz3);
-    formDataToSend.append('mat-album', matQuiz3);
-    formDataToSend.append('others-mat-album', f.profanityTracks || '');
-    formDataToSend.append('mat-album1ai', '13');
-    formDataToSend.append('mat-albumai', '13');
-    formDataToSend.append('others-matai-album', '');
-    formDataToSend.append('vk-album', f.vkLink || '');
-    formDataToSend.append('email-clear-album', f.email || '');
+    if (hasAlbumsInOrder) {
+      formDataToSend.append('alias-album', validatedAlias);
+      formDataToSend.append('name-relize-album', preserveFreeTextField(f.releaseName || 'Альбом'));
+      formDataToSend.append('kuda-reliz-album1', sk);
+      formDataToSend.append('kuda-reliz-album', sk);
+      formDataToSend.append('others-kuda-album', ok);
+      formDataToSend.append('calendar-reliz-album', f.releaseDate || '');
+      formDataToSend.append('mat-album1', matQuiz3);
+      formDataToSend.append('mat-album', matQuiz3);
+      formDataToSend.append('others-mat-album', f.profanityTracks || '');
+      formDataToSend.append('mat-album1ai', '13');
+      formDataToSend.append('mat-albumai', '13');
+      formDataToSend.append('others-matai-album', '');
+      formDataToSend.append('vk-album', f.vkLink || '');
+      formDataToSend.append('email-clear-album', f.email || '');
+    }
   }
   
   // --- Данные из Quiz4 ---
-  if (quiz4State?.formData) {
-    const u = quiz4State.formData;
+  if (quiz4FormData) {
+    const u = quiz4FormData;
     console.log('📝 Добавляем данные Quiz4:');
     
     formDataToSend.append('citysenship1', '');
@@ -1601,15 +1909,14 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
     
     const formatDateForAPI = (dateString?: string): string => {
       if (!dateString) return '';
-      try {
-        const date = new Date(dateString);
-        const day = date.getDate().toString().padStart(2, '0');
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const year = date.getFullYear();
-        return `${day}/${month}/${year}`;
-      } catch {
+      const date = new Date(dateString);
+      if (Number.isNaN(date.getTime())) {
         return dateString;
       }
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
     };
     
     formDataToSend.append('citysenship1', '');
@@ -1661,7 +1968,9 @@ const uploadCoverAndGenerateContract = async (file: File, type: 'single' | 'albu
   formDataToSend.append('link-bandlink', formData.bandlinkUrl || '');
   formDataToSend.append('promocode', formData.promoCode || '');
   let promosumNewdock = '';
-  if (promoDiscount.value > 0 && promoDiscount.value < 100) {
+  if (normalizePromoCode(formData.promoCode) === CUSTOM_AMOUNT_PROMO_CODE) {
+    promosumNewdock = String(Math.max(0, Math.floor(orderTotalAfterPromo.value || 0)));
+  } else if (promoDiscount.value > 0 && promoDiscount.value < 100) {
     const after = Math.floor(orderTotalAfterPromo.value || 0);
     const approxBefore = Math.round((after * 100) / (100 - promoDiscount.value));
     promosumNewdock = String(Math.max(0, approxBefore - after));
@@ -1802,6 +2111,7 @@ watch(() => formData.additionalComments, () => { if (dataLoaded.value) debounced
 watch(() => formData.promoPlan, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.bandlinkUrl, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.promoCode, () => { if (dataLoaded.value) debouncedSave(); });
+watch(() => formData.customPromoAmount, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.usePartnerBonuses, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.usedBonuses, () => { if (dataLoaded.value) debouncedSave(); });
 watch(() => formData.confirmNoRightsViolation, () => { if (dataLoaded.value) debouncedSave(); });
@@ -1816,6 +2126,25 @@ watch(() => formData.platforms, async (newPlatforms) => {
 
 watch([originalTotalAmount, promoDiscount], () => {
   if (!dataLoaded.value) return;
+  if (formData.usedBonuses > maxBonuses.value) {
+    formData.usedBonuses = maxBonuses.value;
+    validateField('usedBonuses');
+  }
+});
+
+watch(isCustomAmountPromo, (enabled) => {
+  if (!enabled) {
+    formData.customPromoAmount = null;
+    errors.customPromoAmount = '';
+    if (formData.usedBonuses > maxBonuses.value) {
+      formData.usedBonuses = maxBonuses.value;
+      validateField('usedBonuses');
+    }
+    return;
+  }
+
+  validateField('customPromoAmount');
+
   if (formData.usedBonuses > maxBonuses.value) {
     formData.usedBonuses = maxBonuses.value;
     validateField('usedBonuses');

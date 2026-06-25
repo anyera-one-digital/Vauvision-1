@@ -102,7 +102,7 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { ElCheckbox, ElMessage } from 'element-plus';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import SignaturePopup from '@/components/layout/Signature.vue';
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -155,7 +155,7 @@ const initDB = async () => {
   try {
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz7: Upgrading DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz7: Upgrading store from version ${oldVersion} to ${newVersion}`);
         
         if (oldVersion < 2) {
           if (db.objectStoreNames.contains('quizState')) {
@@ -213,7 +213,7 @@ const saveStateToDB = async () => {
     };
     
     await quizDB.value.put('quizState', stateToSave);
-    console.log('Quiz7 state saved to IndexedDB', {
+    console.log('Quiz7 state saved to in-memory store', {
       hasContract: !!stateToSave.contractData,
       imagesCount: stateToSave.contractData?.images?.length || 0,
       hasSignature: !!stateToSave.signature
@@ -228,7 +228,7 @@ const loadStateFromDB = async () => {
   try {
     const savedState = await quizDB.value.get('quizState', STORAGE_KEY);
     if (savedState) {
-      console.log('Loading Quiz7 from IndexedDB:', savedState);
+      console.log('Loading Quiz7 from in-memory store:', savedState);
       
       // Восстанавливаем данные формы
       if (savedState.formData) {
@@ -245,7 +245,7 @@ const loadStateFromDB = async () => {
       // Восстанавливаем подпись
       if (savedState.signature) {
         formData.signature = savedState.signature;
-        console.log('Restored signature from DB, length:', savedState.signature.length);
+        console.log('Restored signature from store, length:', savedState.signature.length);
       }
     }
   } catch (error) {

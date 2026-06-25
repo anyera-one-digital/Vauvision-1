@@ -164,6 +164,7 @@ const handleBlockedReleaseFromQuiz = async () => {
 
 const profileRegion = ref("Russia");
 const isRussia = computed(() => profileRegion.value === "Russia");
+const canUseEntrepreneurRequisites = computed(() => isRussia.value);
 
 // Тип банковских данных
 const bankDetailsType = ref<"individual" | "entrepreneur">("individual");
@@ -556,22 +557,24 @@ watch(
 
 // Сохранение паспортных данных
 const savePassportData = async () => {
-  if (!passportForm.fam || !passportForm.imya || !passportForm.number) {
-    ElMessage.error(
-      "Заполните обязательные поля (фамилия, имя, серия и номер)",
-    );
-    return;
-  }
-  if (!passportForm.citizenship?.trim()) {
-    ElMessage.error("Укажите гражданство");
-    return;
-  }
-  if (
-    passportForm.citizenship === "Другое" &&
-    !passportForm.otherCitizenship?.trim()
-  ) {
-    ElMessage.error("Укажите гражданство в поле «Другое гражданство»");
-    return;
+  if (isRussia.value) {
+    if (!passportForm.fam || !passportForm.imya || !passportForm.number) {
+      ElMessage.error(
+        "Заполните обязательные поля (фамилия, имя, серия и номер)",
+      );
+      return;
+    }
+    if (!passportForm.citizenship?.trim()) {
+      ElMessage.error("Укажите гражданство");
+      return;
+    }
+    if (
+      passportForm.citizenship === "Другое" &&
+      !passportForm.otherCitizenship?.trim()
+    ) {
+      ElMessage.error("Укажите гражданство в поле «Другое гражданство»");
+      return;
+    }
   }
 
   loading.value = true;
@@ -1026,7 +1029,7 @@ const refreshUserData = async () => {
             }
           }
 
-          if (ent?.fullName || ent?.ogrnip) {
+          if (canUseEntrepreneurRequisites.value && (ent?.fullName || ent?.ogrnip)) {
             bankDetailsType.value = "entrepreneur";
           } else {
             bankDetailsType.value = "individual";
@@ -1361,7 +1364,10 @@ watch(
                   </p>
                   <div class="setting__details_flex">
                     <div class="form__labels">
-                      <label class="form__label">
+                      <label
+                        v-if="canUseEntrepreneurRequisites"
+                        class="form__label"
+                      >
                         <input
                           type="radio"
                           v-model="bankDetailsType"
@@ -1473,8 +1479,11 @@ watch(
 
                 <!-- Банковские данные - Индивидуальный предприниматель -->
                 <div
+                  v-if="
+                    bankDetailsType === 'entrepreneur' &&
+                    canUseEntrepreneurRequisites
+                  "
                   class="setting__details"
-                  v-if="bankDetailsType === 'entrepreneur'"
                 >
                   <h5 class="setting__details_heading">
                     Банковские данные (ИП)
@@ -1484,7 +1493,10 @@ watch(
                   </p>
                   <div class="setting__details_flex">
                     <div class="form__labels">
-                      <label class="form__label">
+                      <label
+                        v-if="canUseEntrepreneurRequisites"
+                        class="form__label"
+                      >
                         <input
                           type="radio"
                           v-model="bankDetailsType"
@@ -1780,13 +1792,6 @@ watch(
                 </p>
                 <div class="setting__details_flex">
                   <div class="form__groups">
-                    <div
-                      v-if="errors.bankDetails.international?.general"
-                      class="error text_very"
-                      style="margin-bottom: 12px"
-                    >
-                      {{ errors.bankDetails.international.general }}
-                    </div>
                     <div class="form__group">
                       <label for="intlBinance" class="form__label button"
                         >Binance ID / Pay ID</label
@@ -1835,6 +1840,12 @@ watch(
                         size="large"
                       />
                     </div>
+                  </div>
+                  <div
+                    v-if="errors.bankDetails.international?.general"
+                    class="setting__details_error error text_very"
+                  >
+                    {{ errors.bankDetails.international.general }}
                   </div>
                 </div>
                 <div class="setting__details_buttons">
@@ -2444,6 +2455,10 @@ watch(
 
   &_description {
     color: var(--text-gray);
+  }
+
+  &_error {
+    margin-top: -10px;
   }
 
   .form__labels {

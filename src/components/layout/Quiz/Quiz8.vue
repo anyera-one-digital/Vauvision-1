@@ -97,6 +97,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { FileRequest } from '@/utils/api';
 import { buildInstrumentalsFromQuiz2 } from '@/utils/quizInstrumentalsSummary';
+import { validateQuizAlias } from '@/utils/quizAlias';
 import {
   markQuizOrderCompleted,
   QUIZ_ORDER_COMPLETED_SESSION_KEY,
@@ -104,7 +105,7 @@ import {
 } from '@/utils/quizDraftReset';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import PaymentWay from '@/components/layout/Quiz/PaymentWay.vue';
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -375,7 +376,13 @@ interface Quiz6Data {
   orderTotalAfterPromo?: number;
   /** Итог к оплате после бонусов — как в договоре */
   finalPayableAmount?: number;
+  /** Денежный эквивалент списанных бонусов */
+  bonusSpendAmount?: number;
 }
+
+const CUSTOM_AMOUNT_PROMO_CODE = 'VAUVISION-PROMO';
+const normalizePromoCode = (code: string): string =>
+  String(code || '').trim().toUpperCase();
 
 interface Quiz7Data {
   formData?: {
@@ -493,11 +500,11 @@ const hasAlbums = computed(() => albumCount.value > 0);
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
-    console.log('Quiz8: Initializing databases...');
+    console.log('Quiz8: Initializing stores...');
     
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz8: Upgrading DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz8: Upgrading store from version ${oldVersion} to ${newVersion}`);
         
         if (oldVersion < 2) {
           if (db.objectStoreNames.contains('quizState')) {
@@ -512,7 +519,7 @@ const initDB = async () => {
     
     filesDB.value = await openDB(FILES_DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz8: Upgrading Files DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz8: Upgrading Files store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('files')) {
           const store = db.createObjectStore('files', { keyPath: 'id' });
@@ -525,7 +532,7 @@ const initDB = async () => {
     
     audioDB.value = await openDB(AUDIO_DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz8: Upgrading Audio DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz8: Upgrading Audio store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('audio')) {
           const store = db.createObjectStore('audio', { keyPath: 'id' });
@@ -539,7 +546,7 @@ const initDB = async () => {
     dbInitialized.value = true;
     filesDBInitialized.value = true;
     audioDBInitialized.value = true;
-    console.log('Quiz8: Databases initialized successfully');
+    console.log('Quiz8: stores initialized successfully');
     
   } catch (error) {
     console.error('Quiz8: Error initializing databases:', error);
@@ -895,25 +902,33 @@ const canSubmit = computed(() => {
 // Вспомогательные функции
 const formatDate = (dateString?: string): string => {
   if (!dateString) return 'Не указано';
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU');
-  } catch {
-    return dateString;
+  const normalized = dateString.trim();
+  const isoDateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    return `${isoDateMatch[3]}.${isoDateMatch[2]}.${isoDateMatch[1]}`;
   }
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return normalized;
+  }
+  return date.toLocaleDateString('ru-RU');
 };
 
 const formatDateForAPI = (dateString?: string): string => {
   if (!dateString) return '';
-  try {
-    const date = new Date(dateString);
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  } catch {
-    return dateString;
+  const normalized = dateString.trim();
+  const isoDateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    return `${isoDateMatch[3]}/${isoDateMatch[2]}/${isoDateMatch[1]}`;
   }
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return normalized;
+  }
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 const formatCitizenship = (citizenship?: string, other?: string): string => {
@@ -925,7 +940,12 @@ const formatCitizenship = (citizenship?: string, other?: string): string => {
 
 const cleanField = (value: string): string => {
   if (!value) return '';
-  return value.replace(/[\/\\&@+=<>\[\]{}|~?*]/g, ' ').replace(/\s+/g, ' ').trim();
+  return value.replace(/[\/\\@+=<>\[\]{}|~?*]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const preserveFreeTextField = (value: string): string => {
+  if (!value) return '';
+  return String(value).trim();
 };
 
 // Функция для поиска product_id по имени файла
@@ -1021,25 +1041,38 @@ const prepareOrderData = async (): Promise<FormData> => {
     });
   }
   
+  const singleTracksForPayload = hasSingles.value && quiz2Data.value?.singleTracks
+    ? quiz2Data.value.singleTracks
+    : [];
+  const albumsForPayload = hasAlbums.value && quiz2Data.value?.albums
+    ? quiz2Data.value.albums
+    : [];
+  const effectiveSingleCount = singleTracksForPayload.length > 0
+    ? singleTracksForPayload.length
+    : singleCount.value;
+  const effectiveAlbumCount = albumsForPayload.length > 0
+    ? albumsForPayload.length
+    : albumCount.value;
+
   // --- 1. ШАГ 1: Количество (как в TM / newDock для order.php) ---
-  formData.append('check-single', singleCount.value > 0 ? 'on' : 'off');
-  formData.append('check-album', albumCount.value > 0 ? 'on' : 'off');
+  formData.append('check-single', effectiveSingleCount > 0 ? 'on' : 'off');
+  formData.append('check-album', effectiveAlbumCount > 0 ? 'on' : 'off');
   formData.append('check-klip', clipCount.value > 0 ? 'on' : 'off');
   formData.append('check-karta', cardCount.value > 0 ? 'on' : 'off');
   console.log('check-*:', {
-    single: singleCount.value > 0 ? 'on' : 'off',
-    album: albumCount.value > 0 ? 'on' : 'off',
+    single: effectiveSingleCount > 0 ? 'on' : 'off',
+    album: effectiveAlbumCount > 0 ? 'on' : 'off',
     klip: clipCount.value > 0 ? 'on' : 'off',
     karta: cardCount.value > 0 ? 'on' : 'off',
   });
   
-  formData.append('COUNT', String(singleCount.value));
-  formData.append('COUNT', String(albumCount.value));
+  formData.append('COUNT', String(effectiveSingleCount));
+  formData.append('COUNT', String(effectiveAlbumCount));
   formData.append('COUNT', String(clipCount.value));
   formData.append('COUNT', String(cardCount.value));
   
-  formData.append('countSingle', String(singleCount.value));
-  formData.append('countAlbum', String(albumCount.value));
+  formData.append('countSingle', String(effectiveSingleCount));
+  formData.append('countAlbum', String(effectiveAlbumCount));
 
   // --- 2. ШАГ 2: Синглы ---
   if (hasSingles.value && quiz2Data.value?.singleTracks) {
@@ -1050,13 +1083,19 @@ const prepareOrderData = async (): Promise<FormData> => {
         
         formData.append('trackID[]', track.product_id);
         formData.append(`path-file[${track.product_id}]`, track.audioFileName || '');
-        formData.append(`name-file[${track.product_id}]`, track.audioFileName || '');
-        formData.append(`artist[${track.product_id}]`, cleanField(track.performerName || ''));
+        formData.append(
+          `name-file[${track.product_id}]`,
+          preserveFreeTextField(track.trackName || track.audioFileName || ''),
+        );
+        formData.append(
+          `artist[${track.product_id}]`,
+          preserveFreeTextField(track.performerName || ''),
+        );
         formData.append(`autor-music[${track.product_id}]`, cleanField(track.musicAuthor || ''));
         formData.append(`autor-words[${track.product_id}]`, cleanField(track.textAuthor || ''));
         formData.append(
           `autor-files[${track.product_id}]`,
-          cleanField(track.trackName || track.performerName || ''),
+          preserveFreeTextField(track.trackName || ''),
         );
         
         if (track.rightsType) {
@@ -1111,15 +1150,18 @@ const prepareOrderData = async (): Promise<FormData> => {
             
             formData.append('albumID[]', track.product_id);
             formData.append(`path-file-album[${track.product_id}]`, track.audioFileName || '');
-            formData.append(`name-file-album[${track.product_id}]`, track.audioFileName || '');
+            formData.append(
+              `name-file-album[${track.product_id}]`,
+              preserveFreeTextField(track.trackName || track.audioFileName || ''),
+            );
             
             formData.append(
               `artist-album[${track.product_id}]`,
-              cleanField(track.performerName || '')
+              preserveFreeTextField(track.performerName || ''),
             );
             formData.append(
               `autor-files-album[${track.product_id}]`,
-              cleanField(track.trackName || '')
+              preserveFreeTextField(track.trackName || ''),
             );
             
             formData.append(`autor-music-album[${track.product_id}]`, cleanField(track.musicAuthor || ''));
@@ -1181,14 +1223,18 @@ const prepareOrderData = async (): Promise<FormData> => {
     
     // ОТПРАВЛЯЕМ name_relize ТОЛЬКО ЕСЛИ ЕСТЬ СИНГЛЫ
     if (hasSingles.value) {
-      const releaseName = cleanField(f.releaseName || 'Релиз');
+      const releaseName = preserveFreeTextField(f.releaseName || 'Релиз');
       formData.append('name_relize', releaseName);
       console.log('name_relize отправлен (есть синглы):', releaseName);
     } else {
       console.log('name_relize НЕ отправлен (только альбом)');
     }
     
-    const alias = cleanField(f.performerName || '');
+    const aliasValidation = validateQuizAlias(f.performerName || '');
+    if (!aliasValidation.ok) {
+      throw new Error(aliasValidation.message);
+    }
+    const alias = aliasValidation.value;
     formData.append('alias', alias);
 
     const kuda = kudaFieldsFromQuiz3(f);
@@ -1212,7 +1258,7 @@ const prepareOrderData = async (): Promise<FormData> => {
     // Альбомные переменные - отправляем всегда, если есть альбом
     if (hasAlbums.value) {
       console.log('--- Альбомные переменные (отправляем) ---');
-      const albumReleaseName = cleanField(f.releaseName || 'Альбом');
+      const albumReleaseName = preserveFreeTextField(f.releaseName || 'Альбом');
       formData.append('name-relize-album', albumReleaseName);
       formData.append('alias-album', alias);
       formData.append('kuda-reliz-album1', kuda.albumKuda1);
@@ -1318,8 +1364,11 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('promocode', a.promoCode || '');
     const pdDisc = quiz6Data.value?.promoDiscount ?? 0;
     const afterPromoTotal = quiz6Data.value?.orderTotalAfterPromo;
+    const promoCode = a.promoCode || '';
     let promosumStr = '';
-    if (
+    if (normalizePromoCode(promoCode) === CUSTOM_AMOUNT_PROMO_CODE) {
+      promosumStr = String(Math.max(0, Math.floor(Number(afterPromoTotal || 0))));
+    } else if (
       pdDisc > 0 &&
       pdDisc < 100 &&
       afterPromoTotal != null &&
@@ -1332,11 +1381,16 @@ const prepareOrderData = async (): Promise<FormData> => {
     formData.append('promosum', promosumStr);
 
     const usedBonuses = Math.max(0, Math.floor(Number(a.usedBonuses || 0)));
+    const bonusSpendAmount = Math.max(
+      0,
+      Number(quiz6Data.value?.bonusSpendAmount ?? usedBonuses),
+    );
     let sumOrderBeforeBonus = quiz6Data.value?.orderTotalAfterPromo;
     if (sumOrderBeforeBonus == null || !Number.isFinite(sumOrderBeforeBonus)) {
       const finalSnap = quiz6Data.value?.finalPayableAmount;
       if (finalSnap != null && Number.isFinite(finalSnap)) {
-        sumOrderBeforeBonus = Math.max(0, Math.floor(finalSnap + usedBonuses));
+        const recoveredBeforeBonus = Math.round((finalSnap + bonusSpendAmount) * 100) / 100;
+        sumOrderBeforeBonus = Math.max(0, recoveredBeforeBonus);
       } else {
         const baseAmount = 2590;
         const pd = quiz6Data.value?.promoDiscount || 0;
@@ -1456,9 +1510,9 @@ const prepareOrderData = async (): Promise<FormData> => {
     uploadedCount.value = currentFileIndex;
   }
   
-  // 10.4 Прикрепляем Karaoke файлы (ttml)
+  // 10.4 Прикрепляем Karaoke файлы (ttml) как массив для корректного парсинга на PHP
   for (const karaokeFile of karaokeFiles.value) {
-    formData.append('karaoke-text', karaokeFile);
+    formData.append('karaoke-text[]', karaokeFile);
     console.log('Прикреплен Karaoke текст (ttml):', karaokeFile.name);
 
     currentFileIndex++;
@@ -1469,6 +1523,7 @@ const prepareOrderData = async (): Promise<FormData> => {
   console.log('========== ФИНАЛЬНАЯ ПРОВЕРКА ==========');
   console.log('Проверяем критически важные поля:');
   console.log('name-relize:', formData.get('name-relize'));
+  console.log('Количество karaoke-text[]:', formData.getAll('karaoke-text[]').length);
   
   if (hasSingles.value) {
     console.log('trackID[]:', formData.getAll('trackID[]'));
@@ -1649,6 +1704,109 @@ const showOrderSubmissionError = (payload: { error: number; message: string }) =
   });
 };
 
+type ProductIdDiagnostics = {
+  expectedSingles: number;
+  expectedAlbums: number;
+  missingSingles: string[];
+  missingAlbums: string[];
+  duplicateSingles: string[];
+  duplicateAlbums: string[];
+  duplicateAcrossAll: string[];
+};
+
+const getProductIdDiagnostics = (): ProductIdDiagnostics => {
+  let expectedSingles = 0;
+  let expectedAlbums = 0;
+  const missingSingles: string[] = [];
+  const missingAlbums: string[] = [];
+  const singleProductIds: string[] = [];
+  const albumProductIds: string[] = [];
+
+  const normalizeProductId = (value: unknown): string => String(value || '').trim();
+  const getDuplicates = (ids: string[]): string[] => {
+    const counts = new Map<string, number>();
+    ids.forEach((id) => counts.set(id, (counts.get(id) || 0) + 1));
+    return [...counts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([id]) => id);
+  };
+
+  if (hasSingles.value && quiz2Data.value?.singleTracks) {
+    quiz2Data.value.singleTracks.forEach((track, index) => {
+      const requiresId = Boolean(track.audioFileId || track.audioFileName);
+      if (!requiresId) return;
+      expectedSingles++;
+      const productId = normalizeProductId(track.product_id);
+      if (!productId) {
+        missingSingles.push(track.audioFileName || `single-${index + 1}`);
+      } else {
+        singleProductIds.push(productId);
+      }
+    });
+  }
+
+  if (hasAlbums.value && quiz2Data.value?.albums) {
+    quiz2Data.value.albums.forEach((album, albumIndex) => {
+      album.tracks?.forEach((track, trackIndex) => {
+        const requiresId = Boolean(track.audioFileId || track.audioFileName);
+        if (!requiresId) return;
+        expectedAlbums++;
+        const productId = normalizeProductId(track.product_id);
+        if (!productId) {
+          missingAlbums.push(
+            track.audioFileName || `album-${albumIndex + 1}-track-${trackIndex + 1}`,
+          );
+        } else {
+          albumProductIds.push(productId);
+        }
+      });
+    });
+  }
+
+  const duplicateSingles = getDuplicates(singleProductIds);
+  const duplicateAlbums = getDuplicates(albumProductIds);
+  const duplicateAcrossAll = getDuplicates([...singleProductIds, ...albumProductIds]);
+
+  return {
+    expectedSingles,
+    expectedAlbums,
+    missingSingles,
+    missingAlbums,
+    duplicateSingles,
+    duplicateAlbums,
+    duplicateAcrossAll,
+  };
+};
+
+const validateBeforeSubmit = (): { ok: true } | { ok: false; message: string } => {
+  if (!hasContract.value) {
+    return { ok: false, message: 'Данные договора не найдены' };
+  }
+  if (!hasSignature.value) {
+    return {
+      ok: false,
+      message: 'Подпись не найдена. Пожалуйста, вернитесь на шаг 7 и подпишите договор.',
+    };
+  }
+  if (!hasCover.value) {
+    return { ok: false, message: 'Обложка не найдена' };
+  }
+  if (audioFilesCount.value === 0) {
+    return { ok: false, message: 'Аудиофайлы не найдены' };
+  }
+  if (!quiz7Data.value?.formData?.acceptTerms) {
+    return { ok: false, message: 'Необходимо принять условия оферты' };
+  }
+  if (!quiz7Data.value?.formData?.acceptPrivacy) {
+    return { ok: false, message: 'Необходимо дать согласие на обработку персональных данных' };
+  }
+  const aliasValidation = validateQuizAlias(quiz3Data.value?.formData?.performerName || '');
+  if (!aliasValidation.ok) {
+    return { ok: false, message: aliasValidation.message };
+  }
+  return { ok: true };
+};
+
 const handleFinish = async () => {
   try {
     isSubmitting.value = true;
@@ -1657,67 +1815,28 @@ const handleFinish = async () => {
     
     console.log('========== НАЧАЛО ОТПРАВКИ ЗАКАЗА ==========');
     console.log('Проверка наличия всех необходимых данных:');
-    
-    if (!hasContract.value) {
-      console.error('❌ Данные договора не найдены');
-      ElMessage.error('Данные договора не найдены');
+
+    const preflight = validateBeforeSubmit();
+    if (!preflight.ok) {
+      console.error(`❌ ${preflight.message}`);
+      ElMessage.error(preflight.message);
       isSubmitting.value = false;
       return;
-    } else {
-      console.log('✅ Договор:', contractData.value);
     }
     
-    if (!hasSignature.value) {
-      console.error('❌ Подпись не найдена');
-      ElMessage.error('Подпись не найдена. Пожалуйста, вернитесь на шаг 7 и подпишите договор.');
-      isSubmitting.value = false;
-      return;
-    } else {
-      console.log('✅ Подпись:', quiz7Data.value?.signature?.substring(0, 50) + '...');
-    }
-    
-    if (!hasCover.value) {
-      console.error('❌ Обложка не найдена');
-      ElMessage.error('Обложка не найдена');
-      isSubmitting.value = false;
-      return;
-    } else {
-      console.log('✅ Обложка:', coverFileName.value);
-    }
-    
-    if (audioFilesCount.value === 0) {
-      console.error('❌ Аудиофайлы не найдены');
-      ElMessage.error('Аудиофайлы не найдены');
-      isSubmitting.value = false;
-      return;
-    } else {
-      console.log(`✅ Аудиофайлы: ${audioFilesCount.value} шт.`);
-      audioFilesList.value.forEach((audio, index) => {
-        console.log(`   Аудио ${index + 1}:`, {
-          fileName: audio.fileName,
-          productId: audio.productId,
-          type: audio.type
-        });
+    console.log('✅ Договор:', contractData.value);
+    console.log('✅ Подпись:', quiz7Data.value?.signature?.substring(0, 50) + '...');
+    console.log('✅ Обложка:', coverFileName.value);
+    console.log(`✅ Аудиофайлы: ${audioFilesCount.value} шт.`);
+    audioFilesList.value.forEach((audio, index) => {
+      console.log(`   Аудио ${index + 1}:`, {
+        fileName: audio.fileName,
+        productId: audio.productId,
+        type: audio.type
       });
-    }
-    
-    if (!quiz7Data.value?.formData?.acceptTerms) {
-      console.error('❌ Условия оферты не приняты');
-      ElMessage.error('Необходимо принять условия оферты');
-      isSubmitting.value = false;
-      return;
-    } else {
-      console.log('✅ Условия оферты приняты');
-    }
-    
-    if (!quiz7Data.value?.formData?.acceptPrivacy) {
-      console.error('❌ Согласие на обработку данных не дано');
-      ElMessage.error('Необходимо дать согласие на обработку персональных данных');
-      isSubmitting.value = false;
-      return;
-    } else {
-      console.log('✅ Согласие на обработку данных дано');
-    }
+    });
+    console.log('✅ Условия оферты приняты');
+    console.log('✅ Согласие на обработку данных дано');
     
     console.log('\n--- ДАННЫЕ ИЗ ВСЕХ ШАГОВ ---');
     
@@ -1793,42 +1912,80 @@ const handleFinish = async () => {
     
     console.log('\n--- ПРОВЕРКА PRODUCT_ID ---');
     
-    let missingProductIds = false;
-    
-    if (hasSingles.value && quiz2Data.value?.singleTracks) {
-      quiz2Data.value.singleTracks.forEach((track, index) => {
-        if (!track.product_id) {
-          console.error(`❌ Сингл ${index + 1} не имеет product_id!`, track);
-          missingProductIds = true;
-        } else {
-          console.log(`✅ Сингл ${index + 1} имеет product_id:`, track.product_id);
-        }
-      });
+    const productIdDiagnostics = getProductIdDiagnostics();
+    if (
+      productIdDiagnostics.missingSingles.length > 0 ||
+      productIdDiagnostics.missingAlbums.length > 0
+    ) {
+      console.warn('⚠️ Обнаружены треки без product_id перед отправкой заказа', productIdDiagnostics);
+      ElMessage.error(
+        'Не удалось получить идентификаторы всех треков. Вернитесь на шаг "Дополнительная информация" и повторите отправку.',
+      );
+      return;
     }
-    
-    if (hasAlbums.value && quiz2Data.value?.albums) {
-      quiz2Data.value.albums.forEach((album, albumIndex) => {
-        album.tracks?.forEach((track, trackIndex) => {
-          if (!track.product_id) {
-            console.error(`❌ Альбом ${albumIndex + 1}, трек ${trackIndex + 1} не имеет product_id!`, track);
-            missingProductIds = true;
-          } else {
-            console.log(`✅ Альбом ${albumIndex + 1}, трек ${trackIndex + 1} имеет product_id:`, track.product_id);
-          }
-        });
-      });
+    if (
+      productIdDiagnostics.duplicateSingles.length > 0 ||
+      productIdDiagnostics.duplicateAlbums.length > 0 ||
+      productIdDiagnostics.duplicateAcrossAll.length > 0
+    ) {
+      console.warn('⚠️ Обнаружены дубли product_id перед отправкой заказа', productIdDiagnostics);
+      ElMessage.error(
+        'Найдены дублирующиеся идентификаторы треков. Вернитесь на шаг "Дополнительная информация" и повторите отправку файлов.',
+      );
+      return;
     }
-    
-    if (missingProductIds) {
-      console.warn('⚠️ Есть треки без product_id! Они не будут отправлены на сервер.');
-    } else {
-      console.log('✅ Все треки имеют product_id');
-    }
+    console.log('✅ Все треки имеют product_id перед отправкой', productIdDiagnostics);
     
     ElMessage.info('Подготовка данных для отправки...');
     
     console.log('\n--- ПОДГОТОВКА FORM DATA ---');
     const formData = await prepareOrderData();
+
+    const trackIds = formData.getAll('trackID[]').map((id) => String(id).trim()).filter(Boolean);
+    const albumIds = formData.getAll('albumID[]').map((id) => String(id).trim()).filter(Boolean);
+    const uniqueTrackIds = new Set(trackIds);
+    const uniqueAlbumIds = new Set(albumIds);
+    if (hasSingles.value && productIdDiagnostics.expectedSingles > 0) {
+      if (trackIds.length === 0 || trackIds.length < productIdDiagnostics.expectedSingles) {
+        console.warn('⚠️ Не все trackID[] попали в FormData', {
+          expected: productIdDiagnostics.expectedSingles,
+          actual: trackIds.length,
+          trackIds,
+        });
+        ElMessage.error(
+          'Данные синглов не передались в заказ. Повторите отправку с шага "Дополнительная информация".',
+        );
+        return;
+      }
+      if (uniqueTrackIds.size !== trackIds.length) {
+        console.warn('⚠️ В FormData обнаружены дубли trackID[]', {
+          trackIds,
+        });
+        ElMessage.error('В заказ передаются дубли trackID[]. Повторите отправку с шага "Дополнительная информация".');
+        return;
+      }
+    }
+    if (hasAlbums.value && productIdDiagnostics.expectedAlbums > 0) {
+      if (albumIds.length === 0 || albumIds.length < productIdDiagnostics.expectedAlbums) {
+        console.warn('⚠️ Не все albumID[] попали в FormData', {
+          expected: productIdDiagnostics.expectedAlbums,
+          actual: albumIds.length,
+          albumIds,
+        });
+        ElMessage.error(
+          'Данные альбома не передались в заказ. Повторите отправку с шага "Дополнительная информация".',
+        );
+        return;
+      }
+      if (uniqueAlbumIds.size !== albumIds.length) {
+        console.warn('⚠️ В FormData обнаружены дубли albumID[]', {
+          albumIds,
+        });
+        ElMessage.error('В заказ передаются дубли albumID[]. Повторите отправку с шага "Дополнительная информация".');
+        return;
+      }
+    }
+    console.log('✅ Контроль trackID[]/albumID[] перед отправкой пройден');
     
     console.log('Содержимое FormData:');
     for (const pair of (formData as any).entries()) {

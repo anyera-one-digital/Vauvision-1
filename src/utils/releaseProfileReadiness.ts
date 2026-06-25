@@ -18,6 +18,13 @@ function trimStr(v: unknown): string {
   return String(v).trim();
 }
 
+function normalizeFullName(value: unknown): string {
+  return trimStr(value)
+    .replace(/\s+/g, " ")
+    .replace(/ё/gi, "е")
+    .toLocaleLowerCase("ru-RU");
+}
+
 function validateEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -168,6 +175,41 @@ function requisitesIsInternational(
   requisites: RequisitesPayload | null | undefined
 ): boolean {
   return requisites != null && requisites.international != null;
+}
+
+export function getPassportFullName(
+  formUser: Record<string, unknown> | null | undefined,
+  dataUser?: Record<string, unknown> | null | undefined
+): string {
+  const fam = pickUfField(formUser, dataUser ?? null, "uf_fam", "UF_FAM");
+  const imya = pickUfField(formUser, dataUser ?? null, "uf_imya", "UF_IMYA");
+  const otch = pickUfField(formUser, dataUser ?? null, "uf_otch", "UF_OTCH");
+  return [fam, imya, otch].filter(Boolean).join(" ").trim();
+}
+
+export function getRequisitesFullName(
+  requisites: RequisitesPayload | null | undefined
+): string {
+  if (requisitesIsInternational(requisites)) return "";
+  const useIp = useEntrepreneurRequisitesType(requisites);
+  const fio = useIp
+    ? requisites?.entrepreneur?.fullName
+    : requisites?.individual?.fullName;
+  return trimStr(fio);
+}
+
+export function isPassportFullNameMatchingRequisites(
+  formUser: Record<string, unknown> | null | undefined,
+  requisites: RequisitesPayload | null | undefined,
+  dataUser?: Record<string, unknown> | null | undefined
+): boolean {
+  const passportFullName = getPassportFullName(formUser, dataUser);
+  const requisitesFullName = getRequisitesFullName(requisites);
+  if (!passportFullName || !requisitesFullName) return false;
+  return (
+    normalizeFullName(passportFullName) ===
+    normalizeFullName(requisitesFullName)
+  );
 }
 
 export function evaluateReleaseProfileReadiness(

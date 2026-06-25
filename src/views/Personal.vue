@@ -15,9 +15,43 @@
     </div>
     <div v-else class="personal__block">
       <div class="personal__balance">
-        <div class="personal__balance_info">
-          <h3 class="personal__balance_head">ЛИЧНЫЙ КАБИНЕТ <span class="personal__balance_head_name">{{ personalHeadDisplayName }}</span></h3>
-          <p v-if="viewingArtistBanner" class="personal__artist_banner text_small">{{ viewingArtistBanner }}</p>
+        <div class="personal__balance_top_row">
+          <div class="personal__balance_info">
+            <h3 class="personal__balance_head">ЛИЧНЫЙ КАБИНЕТ <span class="personal__balance_head_name">{{ personalHeadDisplayName }}</span></h3>
+            <p class="personal__lifetime_earnings text_one">
+              <span class="personal__lifetime_earnings_label">ЗАРАБОТАНО ЗА ВСЁ ВРЕМЯ:</span>
+              <span class="personal__lifetime_earnings_amount">{{ formattedLifetimeEarnings }} {{ profileData.currencySymbol }}</span>
+              <span v-if="isLifetimeEarningsHot" class="personal__lifetime_earnings_fire" aria-hidden="true">🔥</span>
+            </p>
+            <p v-if="viewingArtistBanner" class="personal__artist_banner text_small">{{ viewingArtistBanner }}</p>
+          </div>
+          <div class="personal__socials">
+            <h3 class="personal__balance_head personal__socials_title">ПОДПИСАТЬСЯ НА НАС:</h3>
+            <ul class="personal__socials_list">
+              <li
+                v-for="socialLink in personalSocialLinks"
+                :key="socialLink.name"
+                class="personal__socials_item"
+              >
+                <a
+                  :href="socialLink.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="personal__socials_link"
+                  :aria-label="socialLink.name"
+                >
+                  <img
+                    class="personal__socials_icon"
+                    :src="socialLink.icon"
+                    :alt="socialLink.name"
+                    width="24"
+                    height="24"
+                    loading="lazy"
+                  >
+                </a>
+              </li>
+            </ul>
+          </div>
         </div>
         <div class="personal__divider"></div>
         <ul class="personal__balance_list">
@@ -44,6 +78,7 @@
               <div class="personal__balance_svg"><WalletSVG/></div>
               <div class="personal__balance_top_info">
                 <h4 class="personal__balance_heading text_one">Отчёт</h4>
+                <!-- <p class="personal__balance_desc"><strong>Отчёт за Q1 2026 задерживается. Он будет доступен к скачиванию не позднее 28 мая. Приносим извинения за задержку!</strong></p> -->
               </div>
             </div>
             <button 
@@ -99,7 +134,7 @@
                   :key="release.id"
                 >
                   <div class="personal__releases_information">
-                    <div class="personal__releases_image">
+                    <!-- <div class="personal__releases_image">
                       <img 
                         v-if="release.image"
                         :src="release.image"
@@ -107,10 +142,10 @@
                         alt=""
                       >
                       <div v-else class="personal__releases_image_placeholder"></div>
-                    </div>
+                    </div> -->
                     <div class="personal__releases_flex">
                       <div class="personal__releases_top">
-                        <h5 class="personal__releases_head"><span>{{ release.propertyNewDocxValue === '1' ? 'Альбом' : 'Сингл' }}</span> {{ release.name }}</h5>
+                        <h5 class="personal__releases_head"><span>{{ releaseTypeLabel(release) }}</span> {{ release.name }}</h5>
                         <p class="personal__releases_album text_small"></p>
                       </div>
                       <p class="personal__releases_date text_small">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
@@ -118,81 +153,81 @@
                   </div>
                   <div class="personal__releases_info">
                     <div class="personal__releases_top">
-                      <h5 class="personal__releases_head"><span>{{ release.propertyNewDocxValue === '1' ? 'Альбом' : 'Сингл' }}</span> {{ release.name }}</h5>
+                      <h5 class="personal__releases_head"><span>{{ releaseTypeLabel(release) }}</span> {{ release.name }}</h5>
                       <p class="personal__releases_album text_small"></p>
                     </div>
                     <!-- Блок с кодами и ссылкой -->
                     <div class="personal__releases_codes">
-                      <!-- UPC код -->
-                      <div 
-                        v-if="release.upcCode && release.upcCode !== 'Нет данных'" 
-                        class="personal__releases_code text_small"
-                        @click="copyToClipboard(release.upcCode, 'UPC код')"
-                      >
-                        <span>UPC код: {{ release.upcCode }}</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
-                        </svg>
-                      </div>
-                      <div 
-                        v-else
-                        class="personal__releases_code personal__releases_code_action text_small"
-                        @click="handleUpcClick(release)"
-                      >
-                        <span>UPC код: {{ getUpcDisplayText(release) }}</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                        </svg>
-                      </div>
+                        <!-- UPC код -->
+                        <div 
+                          v-if="release.upcCode && release.upcCode !== 'Нет данных'" 
+                          class="personal__releases_code text_small"
+                          @click="copyToClipboard(release.upcCode, 'UPC')"
+                        >
+                          <span>UPC: {{ release.upcCode }}</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
+                          </svg>
+                        </div>
+                        <div 
+                          v-else
+                          class="personal__releases_code personal__releases_code_action text_small"
+                          @click="handleUpcClick(release)"
+                        >
+                          <span>UPC: {{ getUpcDisplayText(release) }}</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+                          </svg>
+                        </div>
 
-                      <!-- Ссылка на релиз -->
-                      <div 
-                        v-if="release.link && release.link !== 'Нет данных'" 
-                        class="personal__releases_code text_small"
-                        @click="copyToClipboard(release.link, 'Ссылка')"
-                      >
-                        <!-- <LinkSVG/> -->
-                        <span>Ссылка: {{ release.link }}</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
-                        </svg>
-                      </div>
-                      <div
-                        v-else
-                        class="personal__releases_code personal__releases_code_action text_small"
-                        role="button"
-                        tabindex="0"
-                        @click="handleReleaseLinkPlaceholderClick(release)"
-                        @keydown.enter.prevent="handleReleaseLinkPlaceholderClick(release)"
-                      >
-                        <span>Ссылка: {{ getReleaseLinkPlaceholderLabel(release) }}</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                        </svg>
-                      </div>
-                      <!-- ISRC код для релиза (если нет треков) -->
-                      <RouterLink 
-                        v-if="(!release.tracks || release.tracks.length === 0) && !isReleaseDayReached(release)"
-                        :to="Tr.i18nRoute({ name: 'support' })"
-                        class="personal__releases_code personal__releases_code_action text_small"
-                      >
-                        <span>ISRC: уточнить в поддержке</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                        </svg>
-                      </RouterLink>
-                      <a
-                        v-else-if="(!release.tracks || release.tracks.length === 0)"
-                        href="https://musicfetch.io/isrc-finder"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="personal__releases_code personal__releases_code_action text_small"
-                      >
-                        <span>ISRC: узнать</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
-                        </svg>
-                      </a>
+                        <!-- Ссылка на релиз -->
+                        <div 
+                          v-if="release.link && release.link !== 'Нет данных'" 
+                          class="personal__releases_code text_small"
+                          @click="copyToClipboard(release.link, 'Ссылка')"
+                        >
+                          <!-- <LinkSVG/> -->
+                          <span>Ссылка: {{ release.link }}</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
+                          </svg>
+                        </div>
+                        <div
+                          v-else
+                          class="personal__releases_code personal__releases_code_action text_small"
+                          role="button"
+                          tabindex="0"
+                          @click="handleReleaseLinkPlaceholderClick(release)"
+                          @keydown.enter.prevent="handleReleaseLinkPlaceholderClick(release)"
+                        >
+                          <span>Ссылка: {{ getReleaseLinkPlaceholderLabel(release) }}</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+                          </svg>
+                        </div>
+                        <!-- ISRC код для релиза (если нет треков) -->
+                        <RouterLink 
+                          v-if="(!release.tracks || release.tracks.length === 0) && !isReleaseDayReached(release)"
+                          :to="Tr.i18nRoute({ name: 'support' })"
+                          class="personal__releases_code personal__releases_code_action text_small"
+                        >
+                          <span>ISRC: уточнить в поддержке</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+                          </svg>
+                        </RouterLink>
+                        <a
+                          v-else-if="(!release.tracks || release.tracks.length === 0)"
+                          href="https://musicfetch.io/isrc-finder"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="personal__releases_code personal__releases_code_action text_small"
+                        >
+                          <span>ISRC: узнать</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
+                          </svg>
+                        </a>
                     </div>
 
                     <!-- Блок с треками релиза -->
@@ -256,6 +291,22 @@
                           <EyeSVG/><span>Открыть договор</span>
                         </a -->
                       </div>
+                    </div>
+                  </div>
+                  <div class="personal__releases_services">
+                    <a
+                      class="personal__releases_service_button"
+                      href="https://vauvision.com/stories/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <span>Видео для сториз</span>
+                    </a>
+                    <div
+                      class="personal__releases_service_button"
+                      @click="handleReleaseServiceComingSoon"
+                    >
+                      <span>Запуск рекламы</span>
                     </div>
                   </div>
                 </li>
@@ -337,6 +388,7 @@
                       :href="getFullUrl(`/acts/${report.id}`)" 
                       class="personal__reports_button text_small"
                       v-if="report.hasAct"
+                      @click="scheduleTransactionsRefreshAfterActDownload"
                       download=""
                     >
                       <DownloadSVG/>
@@ -649,8 +701,30 @@
             <span class="quarter__months">{{ quarter.name }} ({{ quarter.months }})</span>
           </button>
         </div>
+
+        <div v-if="isDownloading" class="popup__download-status">
+          <div class="popup__download-spinner" aria-hidden="true"></div>
+          <p class="popup__download-text">{{ reportDownloadStatusText }}</p>
+          <div
+            class="popup__download-progressbar"
+            role="progressbar"
+            aria-label="Прогресс формирования отчёта"
+            :aria-valuemin="0"
+            :aria-valuemax="100"
+            :aria-valuenow="reportDownloadProgress"
+          >
+            <div
+              class="popup__download-progressfill"
+              :style="{ width: `${reportDownloadProgress}%` }"
+            ></div>
+          </div>
+          <p class="popup__download-progressvalue">{{ reportDownloadProgress }}%</p>
+        </div>
         
-        <div v-else class="popup__empty">
+        <div
+          v-if="!isLoadingQuarters && availableQuarters.length === 0 && !isDownloading"
+          class="popup__empty"
+        >
           <p>Нет доступных кварталов</p>
           <p class="popup__empty_hint">Для выбранного года нет отчётов</p>
         </div>
@@ -662,6 +736,33 @@
         >
           <span>{{ isDownloading ? 'Загрузка...' : 'Скачать отчёт' }}</span>
         </button>
+      </div>
+    </div>
+  </div>
+</Teleport>
+
+<!-- Попап при недостаточном балансе для выплаты -->
+<Teleport to="body">
+  <div class="popup" v-if="showLowBalancePopup" @click.self="closeAllPopups">
+    <div class="popup__content popup__content_small">
+      <div class="popup__header">
+        <h5 class="popup__title">Доступно к выводу</h5>
+        <button class="popup__close" @click="closeAllPopups">×</button>
+      </div>
+      <div class="popup__body popup__low-balance-body">
+        <p class="popup__low-balance-value">
+          {{ profileData.balance.toLocaleString() }} {{ profileData.currencySymbol }}
+        </p>
+        <p class="popup__low-balance-text">
+          {{ lowBalanceHintText }}
+          <br>
+          Приносим извинения за неудобства.
+        </p>
+        <div class="popup__actions popup__low-balance-actions">
+          <button class="popup__button button button__primary" @click="closeAllPopups">
+            <span>Понятно</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -691,7 +792,14 @@
           </p>
           <div v-if="isCommissionNoticeVisible" class="popup__commission-block">
             <p class="popup__commission-text">
-              На выплаты свыше 20 000 мы берём комиссию в 5% от суммы для покрытия издержек на банковские транзакции физлицам. Рекомендуем вам открыть ИП и обновить реквизиты.
+              <!-- На выплаты свыше 20 000 мы берём комиссию в 5% от суммы для покрытия издержек на банковские транзакции физлицам. Рекомендуем вам открыть ИП и обновить реквизиты. -->
+              Вы заработали значительную сумму! 🔥
+              <br><br>
+              При ваших доходах банки могут взимать дополнительную комиссию за вывод средств на данные физ. лица в размере 5% от суммы.
+              <br><br>
+              Пожалуйста, при наличии реквизитов ИП, укажите реквизиты вашего ИП в разделе «Настройки» и запросите выплату на них. Таким образом, дополнительной комиссии не будет. 
+              <br><br>
+              Если у вас нет ИП, то настоятельно рекомендуем открыть его и пользоваться им для вывода средств в будущем.
             </p>
             <div class="popup__actions popup__actions_two_buttons popup__commission-actions">
               <button
@@ -711,17 +819,21 @@
               </button>
             </div>
           </div>
-          <p v-if="actError" class="popup__error-message">{{ actError }}</p>
+          <p
+            v-if="actError"
+            class="popup__error-message"
+            v-html="safeActError"
+          ></p>
         </div>
         
         <div class="popup__actions">
           <button 
             v-if="!isCommissionNoticeVisible"
             class="popup__button button button__primary"
-            @click="requestPayoutAct"
+            @click="requestPayoutByRegion"
             :disabled="isRequestingAct"
           >
-            <span v-if="!isRequestingAct">Получить акт</span>
+            <span v-if="!isRequestingAct">{{ payoutPrimaryActionLabel }}</span>
             <span v-else>Запрос...</span>
           </button>
           <button 
@@ -853,12 +965,36 @@
   </div>
 </Teleport>
 
+<!-- Попап об успешном запросе выплаты -->
+<Teleport to="body">
+  <div class="popup" v-if="showPayoutSuccessPopup" @click.self="closeAllPopups">
+    <div class="popup__content popup__content_small">
+      <div class="popup__header">
+        <h5 class="popup__title">ВЫ ЗАПРОСИЛИ ВЫПЛАТУ</h5>
+        <button class="popup__close" @click="closeAllPopups">×</button>
+      </div>
+      <div class="popup__body">
+        <p class="popup__info-message">
+          Успешно! Выплата поступит вам на указанные реквизиты в ближайшее время, но не позже 10 рабочих дней.
+          Статус и сроки выплат вы можете уточнить у нас в поддержке.
+        </p>
+        <div class="popup__actions">
+          <button class="popup__button button button__primary" @click="closeAllPopups">
+            <span>Хорошо, жду!</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</Teleport>
+
 </template>
 
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from 'element-plus';
+import DOMPurify from "dompurify";
 import { sendRequest } from '@/utils/api';
 import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
 import Header from "@/components/layout/Header.vue";
@@ -872,6 +1008,13 @@ import PaySVG from "@/uikit/icon/PaySVG.vue";
 import ReportsSVG from "@/uikit/icon/ReportsSVG.vue";
 import TransactionSVG from "@/uikit/icon/TransactionSVG.vue";
 import ButtonSVG from "@/uikit/icon/ButtonSVG.vue";
+import socialVkIcon from "@/assets/img/personal/social/vk.svg";
+import socialTelegramIcon from "@/assets/img/personal/social/telegram.svg";
+import socialInstagramIcon from "@/assets/img/personal/social/black.png";
+import socialMaxIcon from "@/assets/img/personal/social/max.svg";
+import socialYoutubeIcon from "@/assets/img/personal/social/youtube.svg";
+import socialRutubeIcon from "@/assets/img/personal/social/Icon_RUTUBE_dark_mono.svg";
+import socialDzenIcon from "@/assets/img/personal/social/dzen-icon-logo.svg";
 import Tr from "@/i18n/translation"
 import SignaturePopup from "@/components/layout/Signature.vue";
 import {
@@ -919,6 +1062,7 @@ interface Release {
   id: string | number;
   name: string;
   date: string;
+  releaseType?: string;
   image?: string;
   upcCode?: string;
   link?: string;
@@ -979,6 +1123,12 @@ interface Quarter {
   months: string;
 }
 
+interface SocialLink {
+  name: string;
+  href: string;
+  icon: string;
+}
+
 interface ActResponse {
   docx_url: string;
   pdf_url: string;
@@ -999,14 +1149,70 @@ const profileData = ref({
 const bonusBalanceHintLine = computed(() =>
   profileData.value.region === 'Russia'
     ? '1 бонус = 1 рубль.'
-    : '1 бонус = 1 доллар (USD).'
+    : '100 бонусов = 1,3 $'
 );
+
+const personalSocialLinks: SocialLink[] = [
+  { name: 'VK', href: 'https://vk.com/vauvisionlabel', icon: socialVkIcon },
+  { name: 'Telegram', href: 'https://t.me/vauvisionbusiness', icon: socialTelegramIcon },
+  { name: 'Instagram', href: 'https://instagram.com/vauvision', icon: socialInstagramIcon },
+  { name: 'MAX', href: 'https://max.ru/join/t_kzt6jqx5-l1r0IESewfIKzVUUWgvy2ISt5SDU2CUQ', icon: socialMaxIcon },
+  { name: 'YouTube', href: 'https://youtube.com/vauvision', icon: socialYoutubeIcon },
+  { name: 'Rutube', href: 'https://rutube.ru/channel/24675933/', icon: socialRutubeIcon },
+  { name: 'Dzen', href: 'https://dzen.ru/vauvisionbusiness', icon: socialDzenIcon },
+];
 
 function transactionCurrencySuffix(explicit?: string): string {
   const t = (explicit ?? '').toString().trim();
   if (t) return t;
   return profileData.value.currencySymbol;
 }
+
+interface MenuBalanceApi {
+  updateBalance?: (newBalance: number) => void;
+  refreshUserData?: () => Promise<void> | void;
+}
+
+interface HeaderBalanceApi {
+  updateBalance?: (newBalance: number, currencySymbol?: string) => void;
+  refreshUserData?: () => Promise<void> | void;
+}
+
+const syncBalanceWithSideMenu = async () => {
+  const shellApis = window as Window & {
+    __menuApi?: MenuBalanceApi;
+    __headerApi?: HeaderBalanceApi;
+  };
+  const menuApi = shellApis.__menuApi;
+  if (typeof menuApi?.updateBalance === 'function') {
+    menuApi.updateBalance(profileData.value.balance);
+  }
+
+  if (typeof menuApi?.refreshUserData === 'function') {
+    await Promise.resolve(menuApi.refreshUserData());
+  }
+
+  const headerApi = shellApis.__headerApi;
+  if (typeof headerApi?.updateBalance === "function") {
+    headerApi.updateBalance(
+      profileData.value.balance,
+      profileData.value.currencySymbol
+    );
+  }
+  if (typeof headerApi?.refreshUserData === "function") {
+    await Promise.resolve(headerApi.refreshUserData());
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("cabinet-balance-updated", {
+      detail: {
+        balance: profileData.value.balance,
+        currencySymbol: profileData.value.currencySymbol,
+      },
+    })
+  );
+};
+
 const userName = ref<string>('');
 /** Заголовок ЛК: псевдоним из ростера лейбла / логин getData, иначе имя как раньше */
 const personalHeadDisplayName = computed(() => {
@@ -1023,6 +1229,7 @@ const router = useRouter();
 // Примеры:
 // ?qaPayout=1&qaBalance=25000&qaIp=0
 // ?qaPayout=1&qaBalance=25000&qaIp=1
+// ?qaPayout=1&qaPayoutSuccess=1
 // Удаляется целиком вместе с блоком между START/END комментариями.
 const qaPayoutModeEnabled = computed(() => route.query.qaPayout === '1');
 
@@ -1045,6 +1252,13 @@ const applyQaPayoutOverrides = () => {
     hasEntrepreneurRequisites.value = true;
   } else if (qaIp === '0') {
     hasEntrepreneurRequisites.value = false;
+  }
+
+  if (route.query.qaPayoutSuccess === '1') {
+    closeAllPopups();
+    showPayoutSuccessPopup.value = true;
+    document.documentElement.classList.add('noscroll');
+    return;
   }
 
   if (!showPayoutAmountPopup.value) {
@@ -1070,34 +1284,49 @@ const showReportPopup = ref(false);
 const showQuarterPopup = ref(false);
 const showSignaturePopup = ref(false);
 const showPayoutAmountPopup = ref(false);
+const showLowBalancePopup = ref(false);
 const showImagesPopup = ref(false);
 const showNoReportsPopup = ref(false);
+const showPayoutSuccessPopup = ref(false);
 const actData = ref<ActResponse | null>(null);
 const userLabel = computed(() => (isLabelOwner.value ? 1 : 0));
-const isoldsumm = ref("0");
 const showConfirmReportPopup = ref(false);
 
 const payoutAmount = ref<number | null>(null);
 const isRequestingAct = ref(false);
 const actError = ref('');
+const safeActError = computed(() =>
+  DOMPurify.sanitize(actError.value, {
+    ALLOWED_TAGS: ["br", "strong", "div", "ul", "ol", "span", "li"],
+    ALLOWED_ATTR: [],
+  })
+);
 
 const isSubmittingVyplata = ref(false);
 const vyplataError = ref('');
 const hasEntrepreneurRequisites = ref(false);
+const canWithdrawFromThousand = ref(false);
 
 const availableQuarters = ref<Quarter[]>([]);
 
 const releasesData = ref<Release[]>([]);
 const reportsData = ref<Report[]>([]);
+const lifetimeEarningsTotal = ref(0);
 const transactionsData = ref<Transaction[]>([]);
 const articlesData = ref<Article[]>([]);
 const partnersData = ref<Partner[]>([]);
+const financialStatusRefreshDelaysMs = [1200, 3200, 7000] as const;
+let financialStatusRefreshTimers: Array<ReturnType<typeof setTimeout>> = [];
+let reportDownloadProgressTimer: ReturnType<typeof setInterval> | null = null;
+let reportDownloadDelayMessageTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isLoadingReleases = ref(false);
 const isLoadingReports = ref(false);
 const isLoadingTransactions = ref(false);
 const isLoadingQuarters = ref(false);
 const isDownloading = ref(false);
+const reportDownloadProgress = ref(0);
+const isReportDownloadDelayMessageVisible = ref(false);
 const loadingYear = ref<string | null>(null); // Состояние загрузки для кнопки года
 
 const releasesPagination = ref({
@@ -1194,18 +1423,55 @@ const isBonusAmountValid = computed(() => {
   return bonusPayoutAmount.value > 0 && bonusPayoutAmount.value <= maxBonusAmount.value;
 });
 
+const toBooleanFlag = (value: unknown): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1' || normalized === 'y' || normalized === 'yes' || normalized === 'true';
+  }
+  return false;
+};
+
 const minPayoutAmount = computed(() => {
-  return isoldsumm.value === "1" ? 1000 : 5000;
+  if (!isRussianRegion.value) return 10;
+  return canWithdrawFromThousand.value ? 1000 : 5000;
 });
 
 const isCommissionNoticeVisible = computed(() => {
-  return Number(profileData.value.balance || 0) > 20000 && !hasEntrepreneurRequisites.value;
+  return profileData.value.region === 'Russia'
+    && Number(profileData.value.balance || 0) >= 20000
+    && !hasEntrepreneurRequisites.value;
 });
 
 const isPayoutAmountValid = computed(() => {
   // Всегда валидно, так как сумма автоматически равна максимальному балансу
   return true;
 });
+
+const isRussianRegion = computed(() => profileData.value.region === 'Russia');
+const lifetimeEarningsThreshold = computed(() =>
+  isRussianRegion.value ? 100000 : 10000
+);
+const formattedLifetimeEarnings = computed(() =>
+  formatLifetimeEarnings(lifetimeEarningsTotal.value)
+);
+const isLifetimeEarningsHot = computed(
+  () => lifetimeEarningsTotal.value > lifetimeEarningsThreshold.value
+);
+const lowBalanceHintText = computed(() =>
+  isRussianRegion.value
+    ? `Для вывода средств нужно, чтобы сумма была ${minPayoutAmount.value} рублей и больше. Пожалуйста, запросите выплату позже, когда накопится нужная сумма.`
+    : 'Для вывода средств нужно, чтобы сумма была 10 долларов и больше. Пожалуйста, запросите выплату позже, когда накопится нужная сумма.'
+);
+const payoutPrimaryActionLabel = computed(() =>
+  isRussianRegion.value ? 'Получить акт' : 'Получить выплаты'
+);
+const reportDownloadStatusText = computed(() =>
+  isReportDownloadDelayMessageVisible.value
+    ? 'Сервис сейчас обрабатывает большое количество заявок. Время ожидания может быть увеличено на неопределённый срок. Приносим извинения'
+    : 'Отчёт формируется, это может занять несколько минут. Пожалуйста, не закрывайте это окно.'
+);
 
 const nextReleasesPage = async () => {
   if (currentReleasesPage.value < totalReleasesPages.value) {
@@ -1249,6 +1515,56 @@ const toggleQuarter = (quarterId: string) => {
   } else {
     selectedQuarter.value = quarterId;
   }
+};
+
+const stopReportDownloadProgress = () => {
+  if (reportDownloadProgressTimer !== null) {
+    clearInterval(reportDownloadProgressTimer);
+    reportDownloadProgressTimer = null;
+  }
+};
+
+const stopReportDownloadDelayMessageTimer = () => {
+  if (reportDownloadDelayMessageTimer !== null) {
+    clearTimeout(reportDownloadDelayMessageTimer);
+    reportDownloadDelayMessageTimer = null;
+  }
+  isReportDownloadDelayMessageVisible.value = false;
+};
+
+const startReportDownloadProgress = () => {
+  stopReportDownloadProgress();
+  stopReportDownloadDelayMessageTimer();
+  reportDownloadProgress.value = 8;
+
+  reportDownloadDelayMessageTimer = setTimeout(() => {
+    isReportDownloadDelayMessageVisible.value = true;
+  }, 120000);
+
+  reportDownloadProgressTimer = setInterval(() => {
+    if (reportDownloadProgress.value >= 95) {
+      stopReportDownloadProgress();
+      return;
+    }
+
+    const step = reportDownloadProgress.value < 60
+      ? 7
+      : reportDownloadProgress.value < 85
+        ? 4
+        : 2;
+
+    reportDownloadProgress.value = Math.min(
+      95,
+      reportDownloadProgress.value + step
+    );
+  }, 900);
+};
+
+const completeReportDownloadProgress = async () => {
+  stopReportDownloadProgress();
+  stopReportDownloadDelayMessageTimer();
+  reportDownloadProgress.value = 100;
+  await new Promise((resolve) => setTimeout(resolve, 220));
 };
 
 const getFullUrl = (path: string) => {
@@ -1317,6 +1633,36 @@ const flattenZvonkoTrackRows = (raw: unknown): any[] => {
   return [];
 };
 
+const normalizeTrackDisplayTitle = (rawTitle: unknown): string => {
+  const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+  if (!title) return '';
+  const numbered = title.replace(/^\d+\.\s*/, '');
+  const parts = numbered.split(/\s[–\-—]\s+/u);
+  if (parts.length >= 2) {
+    return parts.slice(1).join(' - ').trim();
+  }
+  return numbered;
+};
+
+const normalizeReleaseType = (rawType: unknown): 'single' | 'album' | '' => {
+  const value = typeof rawType === 'string' ? rawType.trim().toLowerCase() : '';
+  if (value === 'single' || value === 'album') return value;
+  return '';
+};
+
+const resolveReleaseType = (item: any): 'single' | 'album' => {
+  const releaseType = normalizeReleaseType(item?.RELEASE_TYPE ?? item?.releaseType);
+  if (releaseType) return releaseType;
+  const trackRows = flattenZvonkoTrackRows(item?.PROPERTY_ZVONKO_TRACK_JSON);
+  if (trackRows.length > 1) return 'album';
+  if (Array.isArray(item?.TRACK_IDS) && item.TRACK_IDS.length > 1) return 'album';
+  if (Array.isArray(item?.tracks) && item.tracks.length > 1) return 'album';
+  return 'single';
+};
+
+const releaseTypeLabel = (release: Release): string =>
+  resolveReleaseType(release) === 'album' ? 'Альбом' : 'Сингл';
+
 // Функция для извлечения треков из данных API
 const extractTracks = (item: any): Track[] => {
   let tracks: Track[] = [];
@@ -1326,7 +1672,7 @@ const extractTracks = (item: any): Track[] => {
       const rows = flattenZvonkoTrackRows(item.PROPERTY_ZVONKO_TRACK_JSON);
       tracks = rows.map((track: any) => ({
         id: track.id,
-        title: track.title,
+        title: normalizeTrackDisplayTitle(track.title),
         duration: track.duration ?? 0,
         track_number: track.track_number ?? 0,
         isrc: track.isrc,
@@ -1341,10 +1687,8 @@ const extractTracks = (item: any): Track[] => {
     }
   }
 
-  // Без Zvonko: названия из свойства TRACK (GetData) — только для альбомов
-  const isAlbum =
-    item.PROPERTY_NEW_DOCX_VALUE === '1' || item.PROPERTY_NEW_DOCX_VALUE === 1;
-  if (tracks.length === 0 && isAlbum) {
+  // Без Zvonko: названия из свойства TRACK (GetData)
+  if (tracks.length === 0) {
     const names = item.TRACK;
     const ids = item.TRACK_IDS;
     if (Array.isArray(names) && names.length > 0) {
@@ -1353,7 +1697,7 @@ const extractTracks = (item: any): Track[] => {
           Array.isArray(ids) && ids[i] != null && ids[i] !== ''
             ? Number(ids[i])
             : i + 1,
-        title: String(title),
+        title: normalizeTrackDisplayTitle(title),
         duration: 0,
         track_number: i + 1,
         fromTrackProperty: true,
@@ -1398,6 +1742,7 @@ const fetchReleasesPage = async (page: number) => {
         contractFile: item.CONTRACT_FILE ? getFullUrl(item.CONTRACT_FILE) : null,
         hasPng: item.HAS_PNG,
         previewText: item.PREVIEW_TEXT,
+        releaseType: normalizeReleaseType(item.RELEASE_TYPE),
         propertyDateRelizValue: item.PROPERTY_DATE_RELIZ_VALUE,
         propertyDopValue: item.PROPERTY_DOP_VALUE,
         propertyNewDocxValue: item.PROPERTY_NEW_DOCX_VALUE,
@@ -1429,22 +1774,9 @@ const fetchReportsPage = async (page: number) => {
     const response = await sendRequest('get', `/ajax_vue/ajax/getData.php?report_page=${page}`, {});
     
     if (response.data && response.data.downloadedReports) {
-      reportsData.value = response.data.downloadedReports.items.map((item: any) => ({
-        id: item.id,
-        filename: item.name || 'Отчёт',
-        filesize:
-          item.filesize ||
-          item.fileSize ||
-          item.FILE_SIZE ||
-          formatReportFileSizeBytes(item.filesizeBytes) ||
-          '',
-        filesizeBytes: item.filesizeBytes ?? null,
-        date: item.date || '',
-        hasAct: false,
-        xlsxUrl: item.xlsxUrl,
-        pdfUrl: item.pdfUrl,
-        images: item.images || []
-      }));
+      reportsData.value = response.data.downloadedReports.items.map((item: any) =>
+        mapReportItem(item)
+      );
       
       reportsPagination.value = {
         currentPage: response.data.downloadedReports.currentPage || page,
@@ -1467,19 +1799,9 @@ const fetchTransactionsPage = async (page: number) => {
     const response = await sendRequest('get', `/ajax_vue/ajax/getData.php?PAGEN_2=${page}`, {});
     
     if (response.data && response.data.finances) {
-      transactionsData.value = response.data.finances.items.map((item: any, index: number) => ({
-        id: item.ID || index + 1,
-        type: item.TYPE || 'Транзакция',
-        date: item.DATE || '',
-        period: item.PERIOD || '-',
-        status: item.STATUS === 'В обработке' ? 'processing' : 
-                item.STATUS === 'Завершено' ? 'completed' : 
-                item.STATUS === 'Отменено' ? 'cancelled' : 'processing',
-        amount: item.SUM
-          ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || transactionCurrencySuffix()}`
-          : `0 ${transactionCurrencySuffix()}`,
-        currency: item.CURRENCY
-      }));
+      transactionsData.value = response.data.finances.items.map((item: any, index: number) =>
+        mapTransactionItem(item, index)
+      );
       
       transactionsPagination.value = {
         currentPage: response.data.finances.currentPage || page,
@@ -1507,6 +1829,30 @@ const getStatusClass = (status: string) => {
     default:
       return '';
   }
+};
+
+const normalizeTransactionStatus = (rawStatus: unknown): Transaction['status'] => {
+  const normalized = String(rawStatus ?? '').trim().toLowerCase();
+
+  if (
+    normalized === 'завершено' ||
+    normalized === 'выполнен' ||
+    normalized === 'выполнено' ||
+    normalized === 'выполнена'
+  ) {
+    return 'completed';
+  }
+
+  if (
+    normalized === 'отменено' ||
+    normalized === 'отменен' ||
+    normalized === 'отклонено' ||
+    normalized === 'отклонен'
+  ) {
+    return 'cancelled';
+  }
+
+  return 'processing';
 };
 
 const getStatusText = (status: string) => {
@@ -1577,6 +1923,8 @@ const downloadReport = async () => {
 
   loading.value = true;
   isDownloading.value = true;
+  startReportDownloadProgress();
+  let reportRequestSucceeded = false;
   try {
     const requestData = {
       LABLE_1: userLabel.value,
@@ -1610,6 +1958,7 @@ const downloadReport = async () => {
     }
     
     if (downloadUrl) {
+      reportRequestSucceeded = true;
       // Скачиваем файл
       const link = document.createElement('a');
       link.href = downloadUrl;
@@ -1618,8 +1967,13 @@ const downloadReport = async () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
+      await completeReportDownloadProgress();
       closeAllPopups();
+
+      await fetchProfileData();
+      await fetchReports();
+      scheduleFinancialStatusesRefresh();
       
       // Показываем сообщение об успешной загрузке
       ElMessage({
@@ -1638,9 +1992,41 @@ const downloadReport = async () => {
     console.error('Ошибка при запросе:', error);
     alert('Произошла ошибка при запросе');
   } finally {
+    if (!reportRequestSucceeded) {
+      stopReportDownloadProgress();
+    }
+    stopReportDownloadDelayMessageTimer();
+    reportDownloadProgress.value = 0;
     isDownloading.value = false;
     loading.value = false;
   }
+};
+
+const clearFinancialStatusRefreshTimers = () => {
+  financialStatusRefreshTimers.forEach((timer) => clearTimeout(timer));
+  financialStatusRefreshTimers = [];
+};
+
+const scheduleFinancialStatusesRefresh = (includeProfile = false) => {
+  clearFinancialStatusRefreshTimers();
+
+  financialStatusRefreshTimers = financialStatusRefreshDelaysMs.map((delay, index) =>
+    setTimeout(async () => {
+      try {
+        await fetchTransactions();
+        if (includeProfile && index === 0) {
+          await fetchProfileData();
+        }
+      } catch (error) {
+        console.error('Ошибка при обновлении статусов финансовых транзакций:', error);
+      }
+    }, delay)
+  );
+};
+
+const scheduleTransactionsRefreshAfterActDownload = () => {
+  // Даем бэкенду время обновить фазу заявки после скачивания.
+  scheduleFinancialStatusesRefresh(true);
 };
 
 const showReportPopupFunc = () => {
@@ -1675,8 +2061,10 @@ const closeAllPopups = () => {
   showSignaturePopup.value = false;
   showBonusPayoutPopup.value = false;
   showPayoutAmountPopup.value = false;
+  showLowBalancePopup.value = false;
   showImagesPopup.value = false;
   showNoReportsPopup.value = false;
+  showPayoutSuccessPopup.value = false;
   showConfirmReportPopup.value = false; // Добавьте эту строку
   selectedYear.value = '';
   selectedQuarter.value = '';
@@ -1686,6 +2074,9 @@ const closeAllPopups = () => {
   payoutAmount.value = null;
   vyplataError.value = '';
   loadingYear.value = null;
+  stopReportDownloadProgress();
+  stopReportDownloadDelayMessageTimer();
+  reportDownloadProgress.value = 0;
   document.documentElement.classList.remove('noscroll');
 };
 
@@ -1695,6 +2086,9 @@ const backToYearSelection = () => {
   selectedQuarter.value = '';
   selectedYear.value = '';
   availableQuarters.value = [];
+  stopReportDownloadProgress();
+  stopReportDownloadDelayMessageTimer();
+  reportDownloadProgress.value = 0;
 };
 
 const handleImageError = (event: Event) => {
@@ -1717,8 +2111,8 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
       return undefined;
     }
 
-    isoldsumm.value = (data.isoldsumm as string) || "0";
     hasEntrepreneurRequisites.value = false;
+    canWithdrawFromThousand.value = toBooleanFlag(data.isoldsumm);
 
     const user = data.user as Record<string, unknown> | undefined;
     if (user) {
@@ -1738,6 +2132,8 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
         (profileData.value.region === 'Russia' ? '₽' : '$');
       showReportButton.value = !!prof.showReportButton;
     }
+
+    await syncBalanceWithSideMenu();
 
     const settings = data.settings as Record<string, unknown> | undefined;
     const requisites = settings?.requisites as Record<string, unknown> | undefined;
@@ -1788,6 +2184,7 @@ const fetchReleases = async () => {
         contractFile: item.CONTRACT_FILE ? getFullUrl(item.CONTRACT_FILE) : null,
         hasPng: item.HAS_PNG,
         previewText: item.PREVIEW_TEXT,
+        releaseType: normalizeReleaseType(item.RELEASE_TYPE),
         propertyDateRelizValue: item.PROPERTY_DATE_RELIZ_VALUE,
         propertyDopValue: item.PROPERTY_DOP_VALUE,
         propertyNewDocxValue: item.PROPERTY_NEW_DOCX_VALUE,
@@ -1818,22 +2215,7 @@ const fetchReports = async () => {
     const downloaded = data?.downloadedReports as Record<string, unknown> | undefined;
     const repItems = downloaded?.items;
     if (repItems && Array.isArray(repItems)) {
-      reportsData.value = repItems.map((item: any) => ({
-        id: item.id,
-        filename: item.name || 'Отчёт',
-        filesize:
-          item.filesize ||
-          item.fileSize ||
-          item.FILE_SIZE ||
-          formatReportFileSizeBytes(item.filesizeBytes) ||
-          '',
-        filesizeBytes: item.filesizeBytes ?? null,
-        date: item.date || '',
-        hasAct: false,
-        xlsxUrl: item.xlsxUrl,
-        pdfUrl: item.pdfUrl,
-        images: item.images || []
-      }));
+      reportsData.value = repItems.map((item: any) => mapReportItem(item));
       
       reportsPagination.value = {
         currentPage: (downloaded.currentPage as number) || 1,
@@ -1855,19 +2237,9 @@ const fetchTransactions = async () => {
     const finances = data?.finances as Record<string, unknown> | undefined;
     const finItems = finances?.items;
     if (finItems && Array.isArray(finItems)) {
-      transactionsData.value = finItems.map((item: any, index: number) => ({
-        id: item.ID || index + 1,
-        type: item.TYPE || 'Транзакция',
-        date: item.DATE || '',
-        period: item.PERIOD || '-',
-        status: item.STATUS === 'В обработке' ? 'processing' : 
-                item.STATUS === 'Завершено' ? 'completed' : 
-                item.STATUS === 'Отменено' ? 'cancelled' : 'processing',
-        amount: item.SUM
-          ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || transactionCurrencySuffix()}`
-          : `0 ${transactionCurrencySuffix()}`,
-        currency: item.CURRENCY
-      }));
+      transactionsData.value = finItems.map((item: any, index: number) =>
+        mapTransactionItem(item, index)
+      );
       
       transactionsPagination.value = {
         currentPage: (finances.currentPage as number) || 1,
@@ -1875,6 +2247,9 @@ const fetchTransactions = async () => {
         total: (finances.total as string) || "0"
       };
       currentTransactionsPage.value = transactionsPagination.value.currentPage;
+      await refreshLifetimeEarningsFromFinances(finances, finItems as Record<string, unknown>[]);
+    } else {
+      lifetimeEarningsTotal.value = 0;
     }
   } catch (error) {
     console.error('Ошибка при загрузке транзакций:', error);
@@ -1943,6 +2318,101 @@ const formatReportFileSizeBytes = (bytes: number | null | undefined): string => 
   return `${v.toLocaleString('ru-RU', { maximumFractionDigits: decimals, minimumFractionDigits: decimals })} ${units[i]}`;
 };
 
+const parseLooseMoneyValue = (rawValue: unknown): number => {
+  if (typeof rawValue === 'number') {
+    return Number.isFinite(rawValue) ? rawValue : 0;
+  }
+  if (typeof rawValue !== 'string') return 0;
+  const normalized = rawValue
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, '')
+    .replace(/,/g, '.')
+    .replace(/[^\d.-]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatLifetimeEarnings = (value: number): string => {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const isInteger = Math.abs(safeValue % 1) < 0.000001;
+  return safeValue.toLocaleString('ru-RU', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: isInteger ? 0 : 2
+  });
+};
+
+const mapTransactionItem = (item: any, index: number): Transaction => ({
+  id: item.ID || index + 1,
+  type: item.TYPE || 'Транзакция',
+  date: item.DATE || '',
+  period: item.PERIOD || '-',
+  status: normalizeTransactionStatus(item.STATUS),
+  amount: item.SUM
+    ? `${Number(item.SUM).toLocaleString()} ${item.CURRENCY || transactionCurrencySuffix()}`
+    : `0 ${transactionCurrencySuffix()}`,
+  currency: item.CURRENCY
+});
+
+const isCompletedFinanceStatus = (status: unknown): boolean => {
+  const normalized = String(status ?? '').trim().toLowerCase();
+  return normalized === 'выполнен' || normalized === 'completed';
+};
+
+const sumCompletedPayouts = (items: Array<Record<string, unknown>>): number =>
+  items.reduce((acc, item) => {
+    if (!isCompletedFinanceStatus(item.STATUS)) return acc;
+    return acc + parseLooseMoneyValue(item.SUM);
+  }, 0);
+
+const refreshLifetimeEarningsFromFinances = async (
+  finances: Record<string, unknown> | undefined,
+  currentPageItems: Array<Record<string, unknown>>
+) => {
+  const totalItems = Number(finances?.total ?? currentPageItems.length);
+  const perPageSource = finances?.perPage ?? currentPageItems.length ?? 1;
+  const perPage = Math.max(1, Number(perPageSource));
+  const currentPage = Math.max(1, Number(finances?.currentPage ?? 1));
+  const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+
+  let total = sumCompletedPayouts(currentPageItems);
+  if (totalPages <= 1) {
+    lifetimeEarningsTotal.value = total;
+    return;
+  }
+
+  for (let page = 1; page <= totalPages; page++) {
+    if (page === currentPage) continue;
+    try {
+      const response = await sendRequest('get', `/ajax_vue/ajax/getData.php?PAGEN_2=${page}`, {});
+      const pageFinances = response.data?.finances as Record<string, unknown> | undefined;
+      const pageItems = pageFinances?.items;
+      if (!Array.isArray(pageItems)) continue;
+      total += sumCompletedPayouts(pageItems as Array<Record<string, unknown>>);
+    } catch (error) {
+      console.error(`Ошибка при загрузке транзакций (страница ${page}) для пересчёта суммы:`, error);
+    }
+  }
+
+  lifetimeEarningsTotal.value = total;
+};
+
+const mapReportItem = (item: any): Report => ({
+  id: item.id,
+  filename: item.name || 'Отчёт',
+  filesize:
+    item.filesize ||
+    item.fileSize ||
+    item.FILE_SIZE ||
+    formatReportFileSizeBytes(item.filesizeBytes) ||
+    '',
+  filesizeBytes: item.filesizeBytes ?? null,
+  date: item.date || '',
+  hasAct: false,
+  xlsxUrl: item.xlsxUrl,
+  pdfUrl: item.pdfUrl,
+  images: item.images || []
+});
+
 const formatReleases = (releases: string | number) => {
   const count = Number(releases);
   if (count === 0) return '0 релизов';
@@ -1953,9 +2423,8 @@ const formatReleases = (releases: string | number) => {
 
 const openPayoutAmountPopup = () => {
   if (profileData.value.balance < minPayoutAmount.value) {
-    alert(
-      `Минимальная сумма для выплаты: ${minPayoutAmount.value} ${profileData.value.currencySymbol}`
-    );
+    showLowBalancePopup.value = true;
+    document.documentElement.classList.add('noscroll');
     return;
   }
   
@@ -1976,6 +2445,54 @@ const goToBankRequisitesSettings = () => {
     ...normalized,
     hash: '#settings-bank-requisites'
   });
+};
+
+const requestPayoutByRegion = async () => {
+  if (isRussianRegion.value) {
+    await requestPayoutAct();
+    return;
+  }
+
+  await requestPayoutDirect();
+};
+
+const requestPayoutDirect = async () => {
+  if (!isPayoutAmountValid.value) {
+    actError.value = `Сумма должна быть от ${minPayoutAmount.value} до ${profileData.value.balance} ${profileData.value.currencySymbol}`;
+    return;
+  }
+
+  loading.value = true;
+  isRequestingAct.value = true;
+  actError.value = '';
+
+  try {
+    const valuta = profileData.value.currency;
+
+    const response = await sendRequest('post', '/ajax_vue/ajax/profile/vyplata.php', {
+      summ: payoutAmount.value,
+      valuta,
+      summLables: payoutAmount.value
+    });
+
+    console.log('Ответ при прямом запросе выплаты:', response.data);
+
+    if (response.data && response.data.error === 0) {
+      closeAllPopups();
+      showPayoutSuccessPopup.value = true;
+      document.documentElement.classList.add('noscroll');
+      await fetchProfileData();
+      scheduleFinancialStatusesRefresh();
+    } else {
+      actError.value = response.data?.message || 'Ошибка при обработке выплаты';
+    }
+  } catch (error: any) {
+    console.error('Ошибка при прямом запросе выплаты:', error);
+    actError.value = error.response?.data?.message || 'Не удалось обработать выплату';
+  } finally {
+    isRequestingAct.value = false;
+    loading.value = false;
+  }
 };
 
 const requestPayoutAct = async () => {
@@ -2046,9 +2563,11 @@ const submitToVyplataApi = async () => {
     console.log('Ответ от API выплаты:', response.data);
     
     if (response.data && response.data.error === 0) {
-      alert('Выплата успешно обработана');
       closeAllPopups();
+      showPayoutSuccessPopup.value = true;
+      document.documentElement.classList.add('noscroll');
       await fetchProfileData();
+      scheduleFinancialStatusesRefresh();
     } else {
       vyplataError.value = response.data?.message || 'Ошибка при обработке выплаты';
       alert(vyplataError.value);
@@ -2139,12 +2658,20 @@ const submitSignature = async (signatureDataUrl: string) => {
   }
 };
 
+const getCopySuccessMessage = (type: string): string => {
+  if (type === 'Ссылка') {
+    return 'Ссылка скопирована!';
+  }
+
+  return `${type} скопирован!`;
+};
+
 // Функция для копирования текста в буфер обмена
 const copyToClipboard = async (text: string, type: string) => {
   try {
     await navigator.clipboard.writeText(text);
     ElMessage({
-      message: `${type} скопирован!`,
+      message: getCopySuccessMessage(type),
       type: 'success',
       duration: 2000,
       showClose: true
@@ -2159,7 +2686,7 @@ const copyToClipboard = async (text: string, type: string) => {
     document.execCommand('copy');
     document.body.removeChild(textarea);
     ElMessage({
-      message: `${type} скопирован!`,
+      message: getCopySuccessMessage(type),
       type: 'success',
       duration: 2000,
       showClose: true
@@ -2337,7 +2864,7 @@ const handleUpcClick = (release: Release) => {
   } else if (displayText === 'узнать') {
     window.open('https://musicfetch.io/upc-finder', '_blank', 'noopener,noreferrer');
   } else {
-    copyToClipboard(release.upcCode!, 'UPC код');
+    copyToClipboard(release.upcCode!, 'UPC');
   }
 };
 
@@ -2349,6 +2876,10 @@ const getReleaseLinkPlaceholderLabel = (
 
 const handleCreateReleaseLinkPlaceholder = (_release: Release) => {
   ElMessage.info('Раздел «Создать ссылку» будет доступен после подключения сервиса по API.');
+};
+
+const handleReleaseServiceComingSoon = () => {
+  ElMessage.info('Сервис в разработке и скоро будет добавлен');
 };
 
 const handleReleaseLinkPlaceholderClick = (release: Release) => {
@@ -2372,6 +2903,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearFinancialStatusRefreshTimers();
+  stopReportDownloadProgress();
+  stopReportDownloadDelayMessageTimer();
   unregisterPersonalShellRefresh?.();
   unregisterPersonalShellRefresh = null;
 });
@@ -2472,18 +3006,31 @@ onUnmounted(() => {
   background-color: var(--bg);
   border: 1px solid var(--border);
 
+  &_top_row {
+    display: grid;
+    grid-template-columns: 48% 1fr;
+
+    @media (max-width: 1024px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
   &_info {
     display: flex;
+    justify-content: center;
+    min-height: 138px;
     padding: 40px;
     flex-direction: column;
-    gap: 15px;
+    gap: 10px;
 
     @media (max-width: 1439px) {
-      padding: 30px 30px 20px;
+      min-height: 124px;
+      padding: 30px;
     }
 
     @media (max-width: 767px) {
-      padding: 30px 15px 20px;
+      min-height: 110px;
+      padding: 24px 15px;
     }
   }
 
@@ -2514,7 +3061,8 @@ onUnmounted(() => {
 
   &_item {
     display: flex;
-    max-width: calc(33.333% - 27px);
+    flex: 0 0 33.333%;
+    max-width: 33.333%;
     padding: 40px 20px;
     flex-direction: column;
     justify-content: space-between;
@@ -2532,7 +3080,7 @@ onUnmounted(() => {
     }
 
     @media (max-width: 1919px) {
-      max-width: calc(33.333% - 27px);
+      max-width: 33.333%;
       padding: 40px 20px;
     }
 
@@ -2625,10 +3173,103 @@ onUnmounted(() => {
   }
 }
 
+.personal__socials {
+  display: flex;
+  min-height: 138px;
+  padding: 40px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  // color: #dddddd;
+  // border-left: 1px solid var(--border);
+
+  @media (max-width: 1439px) {
+    min-height: 124px;
+    padding: 30px;
+  }
+
+  @media (max-width: 767px) {
+    min-height: auto;
+    padding: 24px 15px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+.personal__socials_title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.15;
+  color: var(--text-gray);
+  white-space: nowrap;
+}
+
+.personal__socials_list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  @media (max-width: 767px) {
+    flex-wrap: wrap;
+  }
+}
+
+.personal__socials_item {
+  display: flex;
+}
+
+.personal__socials_link {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-gray);
+}
+
+.personal__socials_icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 .personal__artist_banner {
   margin: 0;
   color: var(--color);
   font-weight: 500;
+}
+
+.personal__lifetime_earnings {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 400;
+  color: #131313;
+}
+
+.personal__lifetime_earnings_label {
+  font-weight: 400;
+  color: #131313;
+}
+
+.personal__lifetime_earnings_amount {
+  font-weight: 400;
+  color: #ab1115;
+}
+
+.personal__lifetime_earnings_fire {
+  line-height: 1;
 }
 
 .personal__divider {
@@ -2844,7 +3485,9 @@ onUnmounted(() => {
 
   &_info {
     display: flex;
+    flex: 1;
     width: 100%;
+    min-width: 0;
     flex-direction: column;
 
     @media (max-width: 767px) {
@@ -2859,9 +3502,10 @@ onUnmounted(() => {
   }
 
   &_information {
-    .personal__releases_flex {
-      display: none;
-    }
+    display: none;
+    // .personal__releases_flex {
+      
+    // }
 
     @media (max-width: 767px) {
       display: flex;
@@ -2894,6 +3538,7 @@ onUnmounted(() => {
 
   &_codes {
     display: flex;
+    flex: 1;
     flex-wrap: wrap;
     gap: 10px;
     padding: 0 0 10px;
@@ -2910,7 +3555,7 @@ onUnmounted(() => {
 
   &_code {
     display: inline-flex;
-    width: calc(33.333% - 7px);
+    width: calc(50% - 5px);
     align-items: center;
     justify-content: center;
     gap: 8px;
@@ -3002,6 +3647,48 @@ onUnmounted(() => {
     border-radius: 8px;
     border: 1px solid var(--border);
   }
+
+  &_services{
+    width: 220px;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 52px;
+
+    @media (max-width: 1023px) {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      margin-top: 0;
+    }
+
+    @media (max-width: 767px) {
+      max-width: 100%;
+      margin-top: 0;
+    }
+  }
+
+  &_service_button {
+    display: flex;
+    cursor: pointer;
+    width: calc(100% - 0px);
+    min-height: 40px;
+    justify-content: center;
+    padding: 10px 30px;
+    font-weight: 400;
+    color: var(--white);
+    background-color: var(--color);
+    font-size: 14px;
+    line-height: 20px;
+    transition: all 0.3s ease;
+    &:hover {
+      color: var(--white);
+      background-color: var(--black);
+    }
+  }
+
 }
 
 /* Стили для блока треков */
@@ -3794,6 +4481,25 @@ onUnmounted(() => {
     margin-bottom: 4px;
   }
 
+  &__low-balance-body {
+    text-align: center;
+  }
+
+  &__low-balance-value {
+    margin: 0 0 16px;
+    font-size: clamp(32px, 5vw, 44px);
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--color);
+  }
+
+  &__low-balance-text {
+    margin: 0;
+    line-height: 1.5;
+    color: var(--text);
+    font-weight: 500;
+  }
+
   &__years,
   &__quarters {
     display: flex;
@@ -3812,6 +4518,52 @@ onUnmounted(() => {
   &__year-selected {
     margin-bottom: 15px;
     font-weight: 500;
+    color: var(--text-gray);
+  }
+
+  &__download-status {
+    margin-top: 20px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary, #f8f8f8);
+  }
+
+  &__download-spinner {
+    width: 22px;
+    height: 22px;
+    margin: 0 auto 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--color);
+    border-radius: 50%;
+    animation: popup-spinner 0.8s linear infinite;
+  }
+
+  &__download-text {
+    margin: 0 0 12px;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--text);
+  }
+
+  &__download-progressbar {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--border);
+  }
+
+  &__download-progressfill {
+    height: 100%;
+    background: linear-gradient(90deg, #ab1115 0%, #ff5f62 100%);
+    transition: width 0.25s ease;
+  }
+
+  &__download-progressvalue {
+    margin: 8px 0 0;
+    text-align: right;
+    font-size: 12px;
     color: var(--text-gray);
   }
 
@@ -3968,6 +4720,15 @@ onUnmounted(() => {
     text-align: center;
     color: var(--text-gray);
     font-size: 14px;
+  }
+}
+
+@keyframes popup-spinner {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
   }
 }
 

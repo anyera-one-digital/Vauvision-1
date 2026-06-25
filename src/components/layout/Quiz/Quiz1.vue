@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { sendRequest } from "@/utils/api";
 import { ElInputNumber, ElMessage } from "element-plus";
-import { openDB } from "idb";
+import { openDB } from "@/utils/inMemoryIdb";
 import Tr from "@/i18n/translation";
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import FaqSVG from "@/uikit/icon/FaqSVG.vue";
@@ -33,6 +33,8 @@ interface Product {
   basket_quantity?: number;
   basket_item_id?: string | null;
 }
+
+type ReleaseProductType = "single" | "album" | "clip" | "card";
 
 interface BasketItem {
   id: string;
@@ -103,14 +105,23 @@ const basketItems = ref<BasketItem[]>([]);
 const userRegion = ref<string>("");
 const currencySymbol = ref<string>("₽");
 const totalSum = ref<number>(0);
+const BONUS_RATE = 0.07;
+const USD_BONUS_MULTIPLIER = 100;
 
 // Флаг для предотвращения циклических обновлений
 const isUpdatingFromServer = ref(false);
 
+const LEGACY_PRODUCT_IDS: Record<ReleaseProductType, string> = {
+  single: "28",
+  album: "29",
+  clip: "30",
+  card: "31",
+};
+
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
-    console.log("Quiz1: Initializing IndexedDB...");
+    console.log("Quiz1: Initializing in-memory store...");
 
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
@@ -127,7 +138,7 @@ const initDB = async () => {
     });
 
     dbInitialized.value = true;
-    console.log("Quiz1: IndexedDB initialized successfully");
+    console.log("Quiz1: in-memory store initialized successfully");
   } catch (error) {
     console.error("Quiz1: Error initializing IndexedDB:", error);
     dbInitialized.value = false;
@@ -140,7 +151,7 @@ const safeDBOperation = async <T>(
   fallback: T,
 ): Promise<T> => {
   if (!dbInitialized.value || !quizDB.value) {
-    console.log("Quiz1: DB not initialized");
+    console.log("Quiz1: store not initialized");
     return fallback;
   }
 
@@ -173,7 +184,7 @@ const saveStateToDB = async () => {
     };
 
     await quizDB.value.put(STORE_NAME, stateToSave);
-    console.log("Quiz1: Saved to IndexedDB:", stateToSave);
+    console.log("Quiz1: Saved to in-memory store:", stateToSave);
 
     // Отправляем событие об обновлении данных для QuizMenu
     window.dispatchEvent(new CustomEvent("quiz-data-updated"));
@@ -185,7 +196,7 @@ const loadStateFromDB = async () => {
   await safeDBOperation(async () => {
     const savedState = await quizDB.value.get(STORE_NAME, STORAGE_KEY);
     if (savedState) {
-      console.log("Quiz1: Loading from IndexedDB:", savedState);
+      console.log("Quiz1: Loading from in-memory store:", savedState);
 
       singleCountLocal.value = savedState.singleCount || 0;
       albumCountLocal.value = savedState.albumCount || 0;
@@ -309,48 +320,151 @@ const fetchBasket = async () => {
 const getProductPrice = (product: Product | undefined): number => {
   if (!product) return 0;
 
-  if (userRegion.value === "Russia") {
-    return product.prices?.rub ? parseInt(product.prices.rub) : 0;
+  const parsePrice = (value?: string | null): number =>
+    value ? parseInt(value, 10) || 0 : 0;
+
+  const normalizedRegion = userRegion.value.trim().toLowerCase();
+  const isRussiaRegion =
+    normalizedRegion === "russia" || normalizedRegion === "россия";
+  const preferredOrder = isRussiaRegion
+    ? [product.prices?.rub, product.prices?.usd, product.prices?.eur]
+    : [product.prices?.usd, product.prices?.eur, product.prices?.rub];
+
+  for (const rawPrice of preferredOrder) {
+    const parsed = parsePrice(rawPrice);
+    if (parsed > 0) return parsed;
   }
 
-  return product.prices?.usd ? parseInt(product.prices.usd) : 0;
+  return 0;
 };
 
-// Поиск продукта по ID
-const findProductById = (id: string): Product | undefined => {
-  return products.value.find((p) => p.id === id);
+const normalizeProductName = (value?: string): string =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const detectProductType = (product: Product): ReleaseProductType | null => {
+  if (product.id === LEGACY_PRODUCT_IDS.single) return "single";
+  if (product.id === LEGACY_PRODUCT_IDS.album) return "album";
+  if (product.id === LEGACY_PRODUCT_IDS.clip) return "clip";
+  if (product.id === LEGACY_PRODUCT_IDS.card) return "card";
+
+  const nameCandidates = [
+    normalizeProductName(product.name),
+    normalizeProductName(product.properties?.name_en),
+  ];
+
+  for (const name of nameCandidates) {
+    if (!name) continue;
+    if (name.includes("single") || name.includes("сингл")) return "single";
+    if (name.includes("album") || name.includes("альбом")) return "album";
+    if (name.includes("clip") || name.includes("клип") || name.includes("video"))
+      return "clip";
+    if (
+      name.includes("card") ||
+      name.includes("карточ") ||
+      name.includes("artist profile")
+    )
+      return "card";
+  }
+
+  return null;
+};
+
+const productIdsByType = computed<Record<ReleaseProductType, string | null>>(
+  () => {
+    const resolved: Record<ReleaseProductType, string | null> = {
+      single: null,
+      album: null,
+      clip: null,
+      card: null,
+    };
+
+    for (const product of products.value) {
+      const type = detectProductType(product);
+      if (type && !resolved[type]) {
+        resolved[type] = product.id;
+      }
+    }
+
+    const hasProductId = (id: string): boolean =>
+      products.value.some((product) => product.id === id);
+
+    return {
+      single:
+        resolved.single ||
+        (hasProductId(LEGACY_PRODUCT_IDS.single)
+          ? LEGACY_PRODUCT_IDS.single
+          : null),
+      album:
+        resolved.album ||
+        (hasProductId(LEGACY_PRODUCT_IDS.album)
+          ? LEGACY_PRODUCT_IDS.album
+          : null),
+      clip:
+        resolved.clip ||
+        (hasProductId(LEGACY_PRODUCT_IDS.clip)
+          ? LEGACY_PRODUCT_IDS.clip
+          : null),
+      card:
+        resolved.card ||
+        (hasProductId(LEGACY_PRODUCT_IDS.card) ? LEGACY_PRODUCT_IDS.card : null),
+    };
+  },
+);
+
+const getProductIdByType = (type: ReleaseProductType): string | null => {
+  return productIdsByType.value[type] || null;
+};
+
+// Поиск продукта по типу
+const findProductByType = (type: ReleaseProductType): Product | undefined => {
+  const productId = getProductIdByType(type);
+  if (productId) {
+    const byId = products.value.find((p) => p.id === productId);
+    if (byId) return byId;
+  }
+
+  return products.value.find((p) => detectProductType(p) === type);
 };
 
 // Получение basket_item_id для продукта
-const getBasketItemId = (productId: string): string | null => {
-  const basketItem = basketItems.value.find((item) => item.id === productId);
+const getBasketItemId = (
+  type: ReleaseProductType,
+  productId: string | null,
+): string | null => {
+  const basketItem = basketItems.value.find((item) => {
+    if (productId && item.id === productId) return true;
+    return item.type === type;
+  });
   return basketItem?.basket_item_id || null;
 };
 
 // Цены продуктов
-const singlePrice = computed(() => getProductPrice(findProductById("28")));
-const albumPrice = computed(() => getProductPrice(findProductById("29")));
-const clipPrice = computed(() => getProductPrice(findProductById("30")));
-const cardPrice = computed(() => getProductPrice(findProductById("31")));
+const singlePrice = computed(() => getProductPrice(findProductByType("single")));
+const albumPrice = computed(() => getProductPrice(findProductByType("album")));
+const clipPrice = computed(() => getProductPrice(findProductByType("clip")));
+const cardPrice = computed(() => getProductPrice(findProductByType("card")));
 
 // Названия продуктов
 const singleName = computed(() => {
-  const product = findProductById("28");
+  const product = findProductByType("single");
   return product?.name || "Сингл";
 });
 
 const albumName = computed(() => {
-  const product = findProductById("29");
+  const product = findProductByType("album");
   return product?.name || "Альбом";
 });
 
 const clipName = computed(() => {
-  const product = findProductById("30");
+  const product = findProductByType("clip");
   return product?.name || "Клип";
 });
 
 const cardName = computed(() => {
-  const product = findProductById("31");
+  const product = findProductByType("card");
   return product?.name || "Оформление карточки";
 });
 
@@ -367,6 +481,19 @@ const tooltipTexts = {
 // Проверка, выбран ли хотя бы один сингл или альбом
 const isContinueDisabled = computed(() => {
   return singleCountLocal.value === 0 && albumCountLocal.value === 0;
+});
+
+const isUsdCurrency = computed(() => {
+  const normalized = String(currencySymbol.value || "").trim().toUpperCase();
+  return normalized.includes("$") || normalized === "USD" || normalized === "US$";
+});
+
+const accruedBonusesTotal = computed(() => {
+  const baseBonuses = totalSum.value * BONUS_RATE;
+  if (isUsdCurrency.value) {
+    return Math.ceil(baseBonuses * USD_BONUS_MULTIPLIER);
+  }
+  return Math.round(baseBonuses);
 });
 
 // Форматирование цены с разделителями тысяч
@@ -415,7 +542,7 @@ const editBasket = async (basketItemId: string, count: number) => {
 
 // Обработчик изменения количества
 const handleQuantityChange = async (
-  productId: string,
+  type: ReleaseProductType,
   newCount: number,
   oldCount: number,
 ) => {
@@ -427,7 +554,17 @@ const handleQuantityChange = async (
     return;
   }
 
-  const basketItemId = getBasketItemId(productId);
+  const productId = getProductIdByType(type);
+  if (!productId) {
+    ElMessage.error("Не удалось определить услугу для добавления в корзину");
+    if (type === "single") singleCountLocal.value = oldCount;
+    if (type === "album") albumCountLocal.value = oldCount;
+    if (type === "clip") clipCountLocal.value = oldCount;
+    if (type === "card") cardCountLocal.value = oldCount;
+    return;
+  }
+
+  const basketItemId = getBasketItemId(type, productId);
 
   if (newCount > oldCount) {
     console.log(`Quiz1: Adding product ${productId} to basket`);
@@ -475,7 +612,7 @@ const fullReset = async () => {
 
   await safeDBOperation(async () => {
     await quizDB.value.delete(STORE_NAME, STORAGE_KEY);
-    console.log("Quiz1: Состояние удалено из IndexedDB");
+    console.log("Quiz1: Состояние удалено из in-memory store");
   }, null);
 
   console.log("Quiz1: Полная очистка завершена");
@@ -568,7 +705,7 @@ watch(
     };
 
     if (newSingle !== oldSingle) {
-      await handleQuantityChange("28", newSingle, oldSingle);
+      await handleQuantityChange("single", newSingle, oldSingle);
     }
 
     if (newAlbum !== oldAlbum) {
@@ -578,15 +715,15 @@ watch(
         ElMessage.warning("Можно выбрать не более 1 альбома");
         return;
       }
-      await handleQuantityChange("29", newAlbum, oldAlbum);
+      await handleQuantityChange("album", newAlbum, oldAlbum);
     }
 
     if (newClip !== oldClip) {
-      await handleQuantityChange("30", newClip, oldClip);
+      await handleQuantityChange("clip", newClip, oldClip);
     }
 
     if (newCard !== oldCard) {
-      await handleQuantityChange("31", newCard, oldCard);
+      await handleQuantityChange("card", newCard, oldCard);
     }
   },
   { deep: true },
@@ -947,7 +1084,7 @@ if (typeof window !== "undefined") {
         <div class="quiz__form_sum_bonus">
           <p class="quiz__form_sum_bonus_text">Будет начислено бонусов:</p>
           <div class="quiz__form_sum_bonus_total">
-            <span>{{ formatPrice(Math.round(totalSum * 0.07)) }}</span>
+            <span>{{ formatPrice(accruedBonusesTotal) }}</span>
           </div>
         </div>
       </div>

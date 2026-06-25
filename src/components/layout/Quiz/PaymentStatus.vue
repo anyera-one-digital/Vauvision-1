@@ -94,7 +94,7 @@ const openCard = () => {
     <div v-if="status === 'success'" class="payment-status__actions">
       <RouterLink
         class="button button__black payment-status__btn"
-        :to="Tr.i18nRoute({ name: 'home' })"
+        :to="Tr.i18nRoute({ name: 'personal' })"
       >
         <span>На главную</span>
       </RouterLink>

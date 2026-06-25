@@ -2,6 +2,7 @@ import { ref, computed } from "vue";
 import router from "@/router";
 import { postUrlEncodedRequest, sendRequest } from "@/utils/api";
 import { fetchSharedCabinetGetData } from "@/utils/fetchSharedCabinetGetData";
+import { resetQuizDraft } from "@/utils/quizDraftReset";
 import Tr from "@/i18n/translation";
 
 export interface LabelArtist {
@@ -423,6 +424,7 @@ export async function openArtistCabinet(id: string) {
   }
   artistCabinetSwitching.value = true;
   try {
+    await resetQuizDraft();
     await postUrlEncodedRequest(AUTH_LABEL_USER_URL, { ID: id });
     const response = await fetchSharedCabinetGetData();
     const data = response?.data as LabelShellGetDataPayload | undefined;

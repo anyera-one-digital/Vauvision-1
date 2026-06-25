@@ -6,12 +6,13 @@ import BackSVG from "@/uikit/icon/BackSVG.vue";
 import CloseSVG from "@/uikit/icon/CloseSVG.vue";
 import ClipSVG from "@/uikit/icon/ClipSVG.vue";
 import dayjs from 'dayjs';
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 import {
   normalizeQuizUrl,
   validateContractSocialLink,
   getContractSocialLinkErrorMessage,
 } from '@/utils/quizSocialUrls';
+import { validateQuizAlias } from '@/utils/quizAlias';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -99,11 +100,11 @@ const profanityOptions = [
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
-    console.log('Quiz3: Initializing databases...');
+    console.log('Quiz3: Initializing stores...');
     
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz3: Upgrading DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz3: Upgrading store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('quizState')) {
           const store = db.createObjectStore('quizState', { keyPath: 'id' });
@@ -115,7 +116,7 @@ const initDB = async () => {
     
     filesDB.value = await openDB(FILES_DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz3: Upgrading Files DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz3: Upgrading Files store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('files')) {
           const store = db.createObjectStore('files', { keyPath: 'id' });
@@ -129,7 +130,7 @@ const initDB = async () => {
     
     dbInitialized.value = true;
     filesDBInitialized.value = true;
-    console.log('Quiz3: Databases initialized successfully');
+    console.log('Quiz3: stores initialized successfully');
     
   } catch (error) {
     console.error('Quiz3: Error initializing databases:', error);
@@ -149,13 +150,13 @@ const safeDBOperation = async <T>(
   const storeName = dbType === 'quiz' ? 'quizState' : 'files';
   
   if (!initialized || !db) {
-    console.log(`Quiz3: ${dbType} DB not initialized`);
+    console.log(`Quiz3: ${dbType} store not initialized`);
     return fallback;
   }
   
   try {
     if (!db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
-      console.log(`Quiz3: Store ${storeName} not found in ${dbType} DB. Available stores:`, 
+      console.log(`Quiz3: Store ${storeName} not found in ${dbType} in-memory store. Available stores:`, 
                   db.objectStoreNames ? Array.from(db.objectStoreNames) : []);
       return fallback;
     }
@@ -180,7 +181,7 @@ const saveFileToDB = async (file: File, fileId: string): Promise<void> => {
         data: blob,
         timestamp: Date.now()
       });
-      console.log(`Quiz3: File saved to DB with ID: ${fileId}`);
+      console.log(`Quiz3: File saved to store with ID: ${fileId}`);
     },
     null,
     'files'
@@ -212,7 +213,7 @@ const removeFileFromDB = async (fileId: string) => {
   await safeDBOperation(
     async () => {
       await filesDB.value.delete('files', fileId);
-      console.log(`Quiz3: File removed from DB with ID: ${fileId}`);
+      console.log(`Quiz3: File removed from store with ID: ${fileId}`);
     },
     null,
     'files'
@@ -255,7 +256,7 @@ const saveStateToDB = async () => {
       };
       
       await quizDB.value.put('quizState', stateToSave);
-      console.log('Quiz3: State saved to IndexedDB');
+      console.log('Quiz3: State saved to in-memory store');
       
       window.dispatchEvent(new CustomEvent('quiz-data-updated'));
     },
@@ -266,7 +267,7 @@ const saveStateToDB = async () => {
 // Загрузка состояния из IndexedDB
 const loadStateFromDB = async () => {
   if (!dbInitialized.value) {
-    console.log('Quiz3: DB not initialized, skipping load');
+    console.log('Quiz3: store not initialized, skipping load');
     return;
   }
   
@@ -275,7 +276,7 @@ const loadStateFromDB = async () => {
       const savedState = await quizDB.value.get('quizState', STORAGE_KEY);
       
       if (savedState) {
-        console.log('Quiz3: Loading from IndexedDB:', savedState);
+        console.log('Quiz3: Loading from in-memory store:', savedState);
         
         if (savedState.formData) {
           formData.performerName = savedState.formData.performerName || '';
@@ -305,7 +306,7 @@ const loadStateFromDB = async () => {
               formData.coverFile = fileData.file;
               coverFileName.value = fileData.fileName;
               coverFileSize.value = fileData.fileSize;
-              console.log('Quiz3: Cover file loaded from DB');
+              console.log('Quiz3: Cover file loaded from store');
             }
           }
         }
@@ -353,7 +354,7 @@ const loadUserData = async () => {
 // Вычисляемое свойство для проверки готовности к продолжению
 const isReadyForNextStep = computed(() => {
   const requiredFields = [
-    formData.performerName?.trim() || '',
+    validateQuizAlias(formData.performerName || '').ok,
     formData.releaseName?.trim() || '',
     formData.platforms !== '',
     formData.releaseDate?.trim() || '',
@@ -395,12 +396,12 @@ const validateForm = () => {
     errors[key as keyof typeof errors] = '';
   });
   
-  if (!formData.performerName?.trim()) {
-    errors.performerName = 'Псевдоним артиста обязателен для заполнения';
+  const aliasValidation = validateQuizAlias(formData.performerName || '');
+  if (!aliasValidation.ok) {
+    errors.performerName = aliasValidation.message;
     isValid = false;
-  } else if (formData.performerName.trim().length < 2) {
-    errors.performerName = 'Псевдоним артиста должен содержать минимум 2 символа';
-    isValid = false;
+  } else {
+    formData.performerName = aliasValidation.value;
   }
   
   if (!formData.releaseName?.trim()) {
@@ -1005,7 +1006,8 @@ onUnmounted(() => {
           </template>
           <template v-else>
             Не указывайте ссылку на ваш паблик – только на личную страницу. Пример: <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">instagram.com/username</a> или
-            <a href="https://t.me" target="_blank" rel="noopener noreferrer">t.me/username</a>.
+            <a href="https://t.me" target="_blank" rel="noopener noreferrer">t.me/username</a> или
+            <a href="https://vk.com" target="_blank" rel="noopener noreferrer">vk.com/username</a> / <a href="https://vk.ru" target="_blank" rel="noopener noreferrer">vk.ru/username</a>.
           </template>
         </p>
         <el-input
@@ -1015,7 +1017,7 @@ onUnmounted(() => {
           :class="{ 'error': errors.vkLink }"
           :placeholder="profile.region === 'Russia' ? 
             'vk.com/username или vk.ru/username' : 
-            'instagram.com/username или t.me/username'"
+            'instagram.com/username, t.me/username, vk.com/username или vk.ru/username'"
           :disabled="isUploading"
           @blur="handleVkLinkBlur"
           @input="errors.vkLink = ''"

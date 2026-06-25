@@ -24,6 +24,7 @@ import Tr from "@/i18n/translation";
 const isMenuPopup = ref<boolean>(false);
 const isOverlay = ref<boolean>(false);
 const menu = ref<boolean>(false);
+const BALANCE_SYNC_EVENT = "cabinet-balance-updated";
 
 // Данные пользователя
 const userData = ref({
@@ -99,6 +100,41 @@ const fetchUserData = async (prefetched?: Record<string, unknown>) => {
   }
 };
 
+interface BalanceSyncDetail {
+  balance?: number;
+  currencySymbol?: string;
+}
+
+interface HeaderBalanceApi {
+  updateBalance?: (newBalance: number, currencySymbol?: string) => void;
+  refreshUserData?: () => Promise<void> | void;
+}
+
+const applySyncedBalance = (detail?: BalanceSyncDetail) => {
+  if (!detail) return;
+  if (typeof detail.balance === "number" && Number.isFinite(detail.balance)) {
+    userData.value.balance = detail.balance;
+  }
+  if (
+    typeof detail.currencySymbol === "string" &&
+    detail.currencySymbol.trim() !== ""
+  ) {
+    userData.value.currencySymbol = detail.currencySymbol;
+  }
+};
+
+const handleBalanceSyncEvent = (event: Event) => {
+  const customEvent = event as CustomEvent<BalanceSyncDetail>;
+  applySyncedBalance(customEvent.detail);
+};
+
+const updateBalance = (newBalance: number, currencySymbol?: string) => {
+  applySyncedBalance({
+    balance: newBalance,
+    currencySymbol,
+  });
+};
+
 // Функция для копирования ссылки
 const copyReferralLink = async () => {
   if (!referralLink.value) return;
@@ -135,10 +171,20 @@ onMounted(async () => {
   unregisterLabelArtistsRefresh = registerLabelArtistsExternalRefresh(
     fetchUserData
   );
+  window.addEventListener(BALANCE_SYNC_EVENT, handleBalanceSyncEvent);
+
+  (
+    window as Window & { __headerApi?: HeaderBalanceApi }
+  ).__headerApi = {
+    updateBalance,
+    refreshUserData: fetchUserData,
+  };
+
   await fetchUserData();
 });
 
 onUnmounted(() => {
+  window.removeEventListener(BALANCE_SYNC_EVENT, handleBalanceSyncEvent);
   unregisterLabelArtistsRefresh?.();
   unregisterLabelArtistsRefresh = null;
 });

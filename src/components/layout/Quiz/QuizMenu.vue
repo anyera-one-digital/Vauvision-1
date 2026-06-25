@@ -1,6 +1,6 @@
 <script lang="ts" setup>
-import { ref, onMounted, watch, onUnmounted, nextTick } from 'vue';
-import { openDB } from 'idb';
+import { computed, ref, watch, nextTick, onMounted } from 'vue';
+import { useQuizSessionStore } from '@/composables/quizSessionStore';
 
 const props = withDefaults(
   defineProps<{
@@ -15,14 +15,8 @@ const emit = defineEmits<{
   'go-to-step': [step: number];
 }>();
 
-const DB_NAME = 'quizDB';
-const DB_VERSION = 2;
-const STORE_NAME = 'quizState';
-
-const availableSteps = ref<boolean[]>([true, false, false, false, false, false, false, false]);
+const quizSessionStore = useQuizSessionStore();
 const isLoading = ref(false);
-const dbInitialized = ref(false);
-const quizDB = ref<any>(null);
 const menuRef = ref<HTMLElement | null>(null);
 
 const isMobileMenuLayout = (): boolean =>
@@ -38,189 +32,19 @@ const scrollActiveStepIntoView = (): void => {
   });
 };
 
-const initDB = async (): Promise<void> => {
-  try {
-    console.log('QuizMenu: Initializing IndexedDB...');
-    
-    quizDB.value = await openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          console.log('QuizMenu: Created quizState store');
-        }
-      },
-    });
-    
-    dbInitialized.value = true;
-    console.log('QuizMenu: IndexedDB initialized');
-  } catch (error) {
-    console.error('QuizMenu: Error initializing IndexedDB:', error);
-    dbInitialized.value = false;
-  }
-};
-
-const safeGet = async (key: string): Promise<any> => {
-  if (!dbInitialized.value || !quizDB.value) return null;
-  try {
-    if (!quizDB.value.objectStoreNames?.contains(STORE_NAME)) return null;
-    return await quizDB.value.get(STORE_NAME, key);
-  } catch {
-    return null;
-  }
-};
-
-const isStepCompleted = async (step: number): Promise<boolean> => {
-  if (!dbInitialized.value) return false;
-  
-  try {
-    switch (step) {
-      case 1: {
-        const state = await safeGet('quiz1_state');
-        if (!state) return false;
-        return (state.singleCount || 0) > 0 || (state.albumCount || 0) > 0;
-      }
-      
-      case 2: {
-        const state = await safeGet('quiz2_state');
-        const counts = await safeGet('quiz1_state');
-        if (!state) return false;
-        
-        let singlesOk = true;
-        if (counts?.singleCount > 0) {
-          singlesOk = state.singleTracks?.length === counts.singleCount &&
-            state.singleTracks?.every((t: any) => t.trackName && t.performerName && t.musicAuthor && t.textAuthor && (t.uploaded || t.hasAudioUploaded));
-        }
-        
-        let albumsOk = true;
-        if (counts?.albumCount > 0) {
-          albumsOk = state.albums?.length === counts.albumCount &&
-            state.albums?.every((a: any) => a.albumName && a.tracks?.length > 0 &&
-              a.tracks.every((t: any) => t.trackName && t.performerName && t.musicAuthor && t.textAuthor && t.uploaded));
-        }
-        
-        return singlesOk && albumsOk;
-      }
-      
-      case 3: {
-        const state = await safeGet('quiz3_state');
-        if (!state?.formData) return false;
-        const f = state.formData;
-        return !!(f.performerName && f.releaseName && f.email && f.platforms?.length && f.releaseDate && f.hasProfanity && f.vkLink && state.coverFileInfo?.name);
-      }
-      
-      case 4: {
-        const state = await safeGet('quiz4_state');
-        if (!state?.formData) return false;
-        const p = state.formData;
-        
-        const common = !!(p.lastName && p.firstName && p.middleName && p.passportNumber && p.passportIssuedBy && p.passportIssueDate && p.registrationAddress && p.citizenship);
-        const citizenshipOk = p.citizenship !== 'other' || p.otherCitizenship;
-        
-        if (p.userType === 'entrepreneur') {
-          return (
-            common &&
-            citizenshipOk &&
-            !!(
-              p.entrepreneurFullName &&
-              p.entrepreneurEmail &&
-              p.legalAddress &&
-              p.inn &&
-              p.ogrn &&
-              p.accountNumber &&
-              p.bankName &&
-              p.bankInn &&
-              p.bankBik &&
-              p.correspondentAccount
-            )
-          );
-        }
-        return common && citizenshipOk;
-      }
-      
-      case 5: {
-        const state = await safeGet('quiz5_state');
-        if (!state?.formData) return false;
-        const g = state.formData;
-        const required = !!(g.genre && g.hasDrugsMention && g.socialLinks);
-        if (g.hasDrugsMention === 'yes') return required && !!g.drugsTracks;
-        return required;
-      }
-      
-      case 6: {
-        const state = await safeGet('quiz6_state');
-        if (!state?.formData) return false;
-        const a = state.formData;
-        const platformsOk = a.platforms?.length > 0;
-        const otherOk = !a.platforms?.includes('other') || a.otherPlatform;
-        return platformsOk && otherOk && a.confirmNoRightsViolation === true;
-      }
-      
-      case 7: {
-        const state = await safeGet('quiz7_state');
-        if (!state?.formData) return false;
-        return state.formData.acceptTerms === true && state.formData.acceptPrivacy === true;
-      }
-      
-      case 8: {
-        const state = await safeGet('quiz8_state');
-        return !!state;
-      }
-      
-      default: return false;
-    }
-  } catch (error) {
-    console.error(`QuizMenu: Error checking step ${step}:`, error);
-    return false;
-  }
-};
-
-const loadStepsAvailability = async () => {
+const availableSteps = computed<boolean[]>(() => {
   if (props.unlockAllSteps) {
-    availableSteps.value = [true, true, true, true, true, true, true, true];
-    isLoading.value = false;
-    return;
+    return [true, true, true, true, true, true, true, true];
   }
-
-  if (!dbInitialized.value) return;
-  
-  isLoading.value = true;
-  try {
-    const newSteps = [true, false, false, false, false, false, false, false];
-    
-    if (await isStepCompleted(1)) {
-      newSteps[1] = true;
-      if (await isStepCompleted(2)) {
-        newSteps[2] = true;
-        if (await isStepCompleted(3)) {
-          newSteps[3] = true;
-          if (await isStepCompleted(4)) {
-            newSteps[4] = true;
-            if (await isStepCompleted(5)) {
-              newSteps[5] = true;
-              if (await isStepCompleted(6)) {
-                newSteps[6] = true;
-                if (await isStepCompleted(7)) {
-                  newSteps[7] = true;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    
-    availableSteps.value = newSteps;
-  } catch (error) {
-    console.error('QuizMenu: Error loading steps:', error);
-  } finally {
-    isLoading.value = false;
-  }
-};
+  const max = quizSessionStore.state.maxReachableStep;
+  return Array.from({ length: 8 }, (_, idx) => idx + 1 <= max);
+});
 
 const canGoToStep = (step: number): boolean => {
   if (step === props.currentStep) return true;
   if (step < props.currentStep) return true;
-  return availableSteps.value[step - 1];
+  if (props.unlockAllSteps) return true;
+  return quizSessionStore.canNavigateToStep(step);
 };
 
 const goToStep = (step: number) => {
@@ -243,36 +67,19 @@ const getStepTitle = (step: number): string => {
   return titles[step - 1];
 };
 
-const handleDataUpdate = () => {
-  loadStepsAvailability();
-};
-
-onMounted(async () => {
-  await initDB();
-  await loadStepsAvailability();
-  scrollActiveStepIntoView();
-  window.addEventListener('quiz-data-updated', handleDataUpdate);
-});
-
 watch(() => props.currentStep, () => {
-  loadStepsAvailability();
   scrollActiveStepIntoView();
 });
 
 watch(
   () => props.unlockAllSteps,
   () => {
-    loadStepsAvailability();
     scrollActiveStepIntoView();
   }
 );
 
-watch(isLoading, (loading) => {
-  if (!loading) scrollActiveStepIntoView();
-});
-
-onUnmounted(() => {
-  window.removeEventListener('quiz-data-updated', handleDataUpdate);
+onMounted(() => {
+  scrollActiveStepIntoView();
 });
 </script>
 

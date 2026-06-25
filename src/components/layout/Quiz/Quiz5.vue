@@ -4,8 +4,9 @@ import BackSVG from "@/uikit/icon/BackSVG.vue";
 import ClipSVG from "@/uikit/icon/ClipSVG.vue";
 import CloseSVG from "@/uikit/icon/CloseSVG.vue";
 import { ElInput, ElSelect, ElOption, ElMessage } from 'element-plus';
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 import {
+  parseQuizUrl,
   normalizeCommaSeparatedUrls,
 } from '@/utils/quizSocialUrls';
 
@@ -110,12 +111,12 @@ const karaokeFilesInfo = ref<Array<{ name: string; size: number; fileId: string 
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
-    console.log('Quiz5: Initializing databases...');
+    console.log('Quiz5: Initializing stores...');
     
     // База для текстовых данных состояний
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz5: Upgrading DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz5: Upgrading store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('quizState')) {
           const store = db.createObjectStore('quizState', { keyPath: 'id' });
@@ -128,7 +129,7 @@ const initDB = async () => {
     // База для файлов
     filesDB.value = await openDB(FILES_DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz5: Upgrading Files DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz5: Upgrading Files store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('files')) {
           const store = db.createObjectStore('files', { keyPath: 'id' });
@@ -142,7 +143,7 @@ const initDB = async () => {
     
     dbInitialized.value = true;
     filesDBInitialized.value = true;
-    console.log('Quiz5: Databases initialized successfully');
+    console.log('Quiz5: stores initialized successfully');
     
   } catch (error) {
     console.error('Quiz5: Error initializing databases:', error);
@@ -162,13 +163,13 @@ const safeDBOperation = async <T>(
   const storeName = dbType === 'quiz' ? 'quizState' : 'files';
   
   if (!initialized || !db) {
-    console.log(`Quiz5: ${dbType} DB not initialized`);
+    console.log(`Quiz5: ${dbType} store not initialized`);
     return fallback;
   }
   
   try {
     if (!db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
-      console.log(`Quiz5: Store ${storeName} not found in ${dbType} DB. Available stores:`, 
+      console.log(`Quiz5: Store ${storeName} not found in ${dbType} in-memory store. Available stores:`, 
                   db.objectStoreNames ? Array.from(db.objectStoreNames) : []);
       return fallback;
     }
@@ -193,7 +194,7 @@ const saveFileToDB = async (file: File, fileId: string): Promise<void> => {
         data: blob,
         timestamp: Date.now()
       });
-      console.log(`Quiz5: File saved to DB with ID: ${fileId}`);
+      console.log(`Quiz5: File saved to store with ID: ${fileId}`);
     },
     null,
     'files'
@@ -225,7 +226,7 @@ const removeFileFromDB = async (fileId: string) => {
   await safeDBOperation(
     async () => {
       await filesDB.value.delete('files', fileId);
-      console.log(`Quiz5: File removed from DB with ID: ${fileId}`);
+      console.log(`Quiz5: File removed from store with ID: ${fileId}`);
     },
     null,
     'files'
@@ -273,7 +274,7 @@ const saveStateToDB = async () => {
       };
       
       await quizDB.value.put('quizState', stateToSave);
-      console.log('Quiz5: State saved to IndexedDB');
+      console.log('Quiz5: State saved to in-memory store');
       
       // Отправляем событие об обновлении данных для QuizMenu
       window.dispatchEvent(new CustomEvent('quiz-data-updated'));
@@ -285,7 +286,7 @@ const saveStateToDB = async () => {
 // Загрузка состояния из IndexedDB
 const loadStateFromDB = async () => {
   if (!dbInitialized.value) {
-    console.log('Quiz5: DB not initialized, skipping load');
+    console.log('Quiz5: store not initialized, skipping load');
     return;
   }
   
@@ -294,7 +295,7 @@ const loadStateFromDB = async () => {
       const savedState = await quizDB.value.get('quizState', STORAGE_KEY);
       
       if (savedState) {
-        console.log('Quiz5: Loading from IndexedDB:', savedState);
+        console.log('Quiz5: Loading from in-memory store:', savedState);
         
         // Восстанавливаем основные данные формы
         if (savedState.formData) {
@@ -361,6 +362,17 @@ const loadStateFromDB = async () => {
   );
   
   validateFileConsistency();
+};
+
+const isValidArtistCardLink = (link: string): boolean => {
+  if (link.toLowerCase() === 'нужны новые карточки') return true;
+
+  const parsedUrl = parseQuizUrl(link);
+  return Boolean(
+    parsedUrl
+    && ['http:', 'https:'].includes(parsedUrl.protocol)
+    && parsedUrl.hostname,
+  );
 };
 
 // Проверка всех обязательных полей
@@ -432,10 +444,8 @@ const isContinueButtonEnabled = computed(() => {
   const validateLinks = (links: string) => {
     if (links.trim()) {
       const linkArray = links.split(',').map(s => s.trim());
-      const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/;
       const hasInvalidLink = linkArray.some(link => {
-        if (link.toLowerCase() === 'нужны новые карточки') return false;
-        return !urlPattern.test(link);
+        return !isValidArtistCardLink(link);
       });
       return !hasInvalidLink;
     }
@@ -517,10 +527,8 @@ const validateField = (fieldName: keyof FormData) => {
       const value = formData.value[fieldName];
       if (value.trim()) {
         const links = value.split(',').map(s => s.trim());
-        const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/;
         const hasInvalidLink = links.some(link => {
-          if (link.toLowerCase() === 'нужны новые карточки') return false;
-          return !urlPattern.test(link);
+          return !isValidArtistCardLink(link);
         });
         
         if (hasInvalidLink) {

@@ -2,6 +2,8 @@ export type QuizSocialUrlValidationError = 'empty' | 'invalid' | 'no_path' | 'wr
 
 const RUSSIA_HOSTS = new Set(['vk.com', 'vk.ru']);
 const INTERNATIONAL_HOSTS = new Set([
+  'vk.com',
+  'vk.ru',
   'instagram.com',
   'telegram.org',
   't.me',
@@ -122,7 +124,7 @@ export function getContractSocialLinkErrorMessage(
     case 'wrong_host':
       return region === 'Russia'
         ? 'Ссылка должна вести на VK (vk.com или vk.ru)'
-        : 'Ссылка должна вести на Instagram, Telegram или t.me';
+        : 'Ссылка должна вести на VK, Instagram, Telegram или t.me';
   }
 }
 

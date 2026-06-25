@@ -1,5 +1,6 @@
-import { openDB } from "idb";
+import { openDB } from "@/utils/inMemoryIdb";
 import { SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET } from "@/composables/labelArtistsMenu";
+import { useQuizSessionStore } from "@/composables/quizSessionStore";
 
 export const QUIZ_ORDER_COMPLETED_SESSION_KEY = "quiz_order_completed";
 
@@ -63,6 +64,8 @@ const clearBinaryStore = async (
 export const resetQuizDraft = async (
   options: ResetQuizDraftOptions = {},
 ): Promise<void> => {
+  const quizSessionStore = useQuizSessionStore();
+
   const preservedSessionKeys = new Set<string>([
     ...SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET,
     ...(options.preserveSessionKeys ?? []),
@@ -106,6 +109,8 @@ export const resetQuizDraft = async (
     clearBinaryStore(QUIZ_FILES_DB_NAME, "files"),
     clearBinaryStore(QUIZ_AUDIO_DB_NAME, "audio"),
   ]);
+
+  quizSessionStore.resetSession();
 
   window.dispatchEvent(new CustomEvent("quiz-data-updated"));
 };

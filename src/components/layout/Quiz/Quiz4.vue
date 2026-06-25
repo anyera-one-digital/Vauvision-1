@@ -2,9 +2,10 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { ElInput, ElMessage, ElSelect, ElOption, ElDatePicker } from 'element-plus';
 import { sendRequest } from '@/utils/api';
+import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
 import BackSVG from "@/uikit/icon/BackSVG.vue";
 import dayjs from 'dayjs';
-import { openDB } from 'idb';
+import { openDB } from '@/utils/inMemoryIdb';
 
 const emit = defineEmits<{
   'go-back': [];
@@ -81,6 +82,9 @@ const citizenshipOptions = [
   { label: 'Российская Федерация', value: 'RU' },
   { label: 'Другое', value: 'other' }
 ];
+const profileRegion = ref('Russia');
+const isNonRuAccount = computed(() => profileRegion.value !== 'Russia');
+const canUseEntrepreneur = computed(() => !isNonRuAccount.value);
 
 /** Поля только для ИП: сброс/подстановка из профиля и черновик при переключении типа лица */
 const ENTREPRENEUR_FIELD_KEYS = [
@@ -98,6 +102,8 @@ const ENTREPRENEUR_FIELD_KEYS = [
 
 type EntrepreneurFieldKey = (typeof ENTREPRENEUR_FIELD_KEYS)[number];
 
+type IndividualFieldKey = 'accountNumber' | 'bankBik';
+
 /** Копия реквизитов ИП при переключении на физлицо (чтобы вернуть при обратном выборе ИП) */
 const entrepreneurDraftBackup = reactive(
   Object.fromEntries(ENTREPRENEUR_FIELD_KEYS.map((k) => [k, ''])) as Record<
@@ -113,6 +119,12 @@ const entrepreneurProfileSeed = reactive(
     string
   >,
 );
+
+/** Слепок реквизитов физлица из профиля: используется при возврате с ИП на физлицо. */
+const individualProfileSeed = reactive<Record<IndividualFieldKey, string>>({
+  accountNumber: '',
+  bankBik: '',
+});
 
 const hasAnyEntrepreneurValues = (
   source: Record<EntrepreneurFieldKey, string>,
@@ -147,6 +159,25 @@ const setEntrepreneurProfileSeedField = (
   entrepreneurProfileSeed[key] = normalized;
 };
 
+const setIndividualProfileSeedField = (
+  key: IndividualFieldKey,
+  value: unknown,
+  stripSpaces = false,
+) => {
+  let normalized = value == null ? '' : String(value).trim();
+  if (stripSpaces) normalized = normalized.replace(/\s/g, '');
+  individualProfileSeed[key] = normalized;
+};
+
+const restoreIndividualProfileSeedToForm = () => {
+  if (individualProfileSeed.accountNumber) {
+    formData.accountNumber = individualProfileSeed.accountNumber;
+  }
+  if (individualProfileSeed.bankBik) {
+    formData.bankBik = individualProfileSeed.bankBik;
+  }
+};
+
 const clearEntrepreneurFieldsOnly = () => {
   for (const k of ENTREPRENEUR_FIELD_KEYS) {
     formData[k] = '';
@@ -165,11 +196,11 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 // Инициализация IndexedDB
 const initDB = async () => {
   try {
-    console.log('Quiz4: Initializing IndexedDB...');
+    console.log('Quiz4: Initializing in-memory store...');
     
     quizDB.value = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion) {
-        console.log(`Quiz4: Upgrading DB from version ${oldVersion} to ${newVersion}`);
+        console.log(`Quiz4: Upgrading store from version ${oldVersion} to ${newVersion}`);
         
         if (!db.objectStoreNames.contains('quizState')) {
           const store = db.createObjectStore('quizState', { keyPath: 'id' });
@@ -180,7 +211,7 @@ const initDB = async () => {
     });
     
     dbInitialized.value = true;
-    console.log('Quiz4: IndexedDB initialized successfully');
+    console.log('Quiz4: in-memory store initialized successfully');
     
   } catch (error) {
     console.error('Quiz4: Error initializing IndexedDB:', error);
@@ -194,7 +225,7 @@ const safeDBOperation = async <T>(
   fallback: T
 ): Promise<T> => {
   if (!dbInitialized.value || !quizDB.value) {
-    console.log('Quiz4: DB not initialized');
+    console.log('Quiz4: store not initialized');
     return fallback;
   }
   
@@ -248,7 +279,7 @@ const saveStateToDB = async () => {
       };
       
       await quizDB.value.put('quizState', stateToSave);
-      console.log('✅ Quiz4 state saved to IndexedDB');
+      console.log('✅ Quiz4 state saved to in-memory store');
       
       // Отправляем событие об обновлении данных для QuizMenu
       window.dispatchEvent(new CustomEvent('quiz-data-updated'));
@@ -260,7 +291,7 @@ const saveStateToDB = async () => {
 // Загрузка состояния из IndexedDB
 const loadStateFromDB = async () => {
   if (!dbInitialized.value) {
-    console.log('Quiz4: DB not initialized, skipping load');
+    console.log('Quiz4: store not initialized, skipping load');
     return;
   }
   
@@ -268,7 +299,7 @@ const loadStateFromDB = async () => {
     async () => {
       const savedState = await quizDB.value.get('quizState', STORAGE_KEY);
       if (savedState) {
-        console.log('📥 Loading Quiz4 from IndexedDB:', savedState);
+        console.log('📥 Loading Quiz4 from in-memory store:', savedState);
         
         // Восстанавливаем основные данные формы
         if (savedState.formData) {
@@ -315,6 +346,28 @@ const loadUserData = async () => {
     
     const data = response.data as any;
     const user = data.user || {};
+    const userUf =
+      user?.uf && typeof user.uf === 'object'
+        ? (user.uf as Record<string, unknown>)
+        : {};
+    const getUserField = (...keys: string[]): string => {
+      for (const key of keys) {
+        const direct = user?.[key];
+        if (direct != null && String(direct).trim() !== '') {
+          return String(direct).trim();
+        }
+        const ufDirect = userUf?.[key];
+        if (ufDirect != null && String(ufDirect).trim() !== '') {
+          return String(ufDirect).trim();
+        }
+        const upper = key.toUpperCase();
+        const ufUpper = userUf?.[upper];
+        if (ufUpper != null && String(ufUpper).trim() !== '') {
+          return String(ufUpper).trim();
+        }
+      }
+      return '';
+    };
     
     console.log('Quiz4: User data received:', user);
     
@@ -345,10 +398,17 @@ const loadUserData = async () => {
     
     // Гражданство (только если поле пустое)
     if (user.uf_grazhdanstvo && !formData.citizenship) {
-      const citizenship = user.uf_grazhdanstvo;
+      const citizenship = String(user.uf_grazhdanstvo || '').trim();
+      const citizenshipNormalized = citizenship.toLowerCase();
       console.log('Quiz4: Citizenship from API:', citizenship);
       
-      if (citizenship === 'Российская Федерация' || citizenship === 'РФ' || citizenship === 'Russia') {
+      if (
+        citizenshipNormalized === 'российская федерация' ||
+        citizenshipNormalized === 'рф' ||
+        citizenshipNormalized === 'россия' ||
+        citizenshipNormalized === 'russia' ||
+        citizenshipNormalized === 'ru'
+      ) {
         formData.citizenship = 'RU';
       } else if (citizenship === 'Другое') {
         formData.citizenship = 'other';
@@ -384,6 +444,53 @@ const loadUserData = async () => {
       console.log('✅ Loaded registration address');
     }
 
+    // Для физлица приоритетный источник должен совпадать с Setting.vue:
+    // settings.requisites.individual.account / bik
+    let accountFromSettings = '';
+    let bikFromSettings = '';
+    try {
+      const cabinetResponse = await fetchSharedCabinetGetData();
+      const rawCabinetPayload = (cabinetResponse?.data ?? {}) as Record<string, any>;
+      const cabinetPayload =
+        rawCabinetPayload?.data &&
+        typeof rawCabinetPayload.data === 'object'
+          ? (rawCabinetPayload.data as Record<string, any>)
+          : rawCabinetPayload;
+      const profile = cabinetPayload?.profile as Record<string, any> | undefined;
+      if (typeof profile?.region === 'string' && profile.region.trim()) {
+        profileRegion.value = profile.region.trim();
+      }
+      const individual = cabinetPayload?.settings?.requisites?.individual as Record<string, any> | undefined;
+
+      accountFromSettings = String(individual?.account ?? individual?.rs ?? '').replace(/\s/g, '');
+      bikFromSettings = String(individual?.bik ?? '').replace(/\s/g, '');
+    } catch (settingsErr) {
+      console.warn('Quiz4: Не удалось получить requisites.individual из settings:', settingsErr);
+    }
+
+    const accountFromUf = getUserField('uf_rs', 'UF_RS').replace(/\s/g, '');
+    const bikFromUf = getUserField('uf_bik', 'UF_BIK').replace(/\s/g, '');
+
+    if (accountFromSettings) {
+      setIndividualProfileSeedField('accountNumber', accountFromSettings, true);
+      formData.accountNumber = accountFromSettings;
+    } else if (accountFromUf) {
+      setIndividualProfileSeedField('accountNumber', accountFromUf, true);
+      if (!formData.accountNumber) {
+        formData.accountNumber = accountFromUf;
+      }
+    }
+
+    if (bikFromSettings) {
+      setIndividualProfileSeedField('bankBik', bikFromSettings, true);
+      formData.bankBik = bikFromSettings;
+    } else if (bikFromUf) {
+      setIndividualProfileSeedField('bankBik', bikFromUf, true);
+      if (!formData.bankBik) {
+        formData.bankBik = bikFromUf;
+      }
+    }
+
     const str = (v: unknown) => (v == null ? '' : String(v).trim());
     setEntrepreneurProfileSeedField('entrepreneurFullName', user.uf_fioip);
     setEntrepreneurProfileSeedField('entrepreneurEmail', user.uf_email);
@@ -398,7 +505,8 @@ const loadUserData = async () => {
 
     /** Тип реквизитов в профиле: физлицо / ИП / неизвестно */
     const resolveProfileBankType = (): 'individual' | 'entrepreneur' | null => {
-      const lic = Number(user.uf_lico);
+      const licRaw = getUserField('uf_lico', 'UF_LICO');
+      const lic = Number(licRaw);
       if (lic === 2) return 'entrepreneur';
       if (lic === 1) return 'individual';
       const hasIp =
@@ -407,7 +515,9 @@ const loadUserData = async () => {
         str(user.uf_bikip) ||
         str(user.uf_addressip);
       const hasFiz =
-        str(user.uf_fiofiz) && str(user.uf_rs) && str(user.uf_bik);
+        str(getUserField('uf_fiofiz', 'UF_FIOFIZ')) &&
+        str(accountFromSettings || accountFromUf) &&
+        str(bikFromSettings || bikFromUf);
       if (hasIp) return 'entrepreneur';
       if (hasFiz) return 'individual';
       return null;
@@ -418,10 +528,13 @@ const loadUserData = async () => {
     if (profileBankType === 'individual') {
       formData.userType = 'individual';
       clearEntrepreneurFieldsOnly();
+      // accountNumber/bankBik общие для физлица и ИП:
+      // после очистки ИП-полей восстанавливаем seed физлица.
+      restoreIndividualProfileSeedToForm();
       if (hasAnyEntrepreneurValues(entrepreneurProfileSeed)) {
         snapshotEntrepreneurBackupFromSeed();
       }
-    } else if (profileBankType === 'entrepreneur') {
+    } else if (profileBankType === 'entrepreneur' && canUseEntrepreneur.value) {
       formData.userType = 'entrepreneur';
       // Сначала очищаем ИП-поля от прошлого состояния квиза в IndexedDB, затем заполняем из профиля
       clearEntrepreneurFieldsOnly();
@@ -466,6 +579,8 @@ const loadUserData = async () => {
 
 // Вычисляемое свойство для проверки готовности к продолжению
 const isReadyForNextStep = computed(() => {
+  if (isNonRuAccount.value) return true;
+
   if (!formData.userType) return false;
   if (!formData.citizenship) return false;
   if (!formData.lastName?.trim()) return false;
@@ -478,6 +593,11 @@ const isReadyForNextStep = computed(() => {
   
   if (formData.citizenship === 'other' && !formData.otherCitizenship?.trim()) {
     return false;
+  }
+
+  if (formData.userType === 'individual') {
+    if (!formData.accountNumber?.trim()) return false;
+    if (!formData.bankBik?.trim()) return false;
   }
   
   if (formData.userType === 'entrepreneur') {
@@ -505,7 +625,91 @@ const validateBIK = (bik: string): boolean => /^\d{9}$/.test(bik);
 const validateAccountNumber = (account: string): boolean => /^\d{20}$/.test(account);
 const validatePassportNumber = (passport: string): boolean => /^\d{10}$/.test(passport.replace(/\s/g, ''));
 
+const formatPassportDateForProfile = (value: string): string => {
+  if (!value) return '';
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) return value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-');
+    return `${d}.${m}.${y}`;
+  }
+  return value;
+};
+
+const getApiErrorMessage = (error: unknown): string => {
+  const fallback = 'Не удалось сохранить паспортные данные и реквизиты в профиль';
+  const responseData = (error as any)?.response?.data;
+
+  if (typeof responseData === 'string') {
+    const value = responseData.trim();
+    if (value) return value;
+  }
+
+  if (responseData && typeof responseData === 'object') {
+    const candidates = ['error', 'message', 'detail', 'msg'];
+    for (const key of candidates) {
+      const raw = (responseData as Record<string, unknown>)[key];
+      if (typeof raw === 'string' && raw.trim()) return raw.trim();
+      if (Array.isArray(raw) && raw.length) {
+        const first = raw[0];
+        if (typeof first === 'string' && first.trim()) return first.trim();
+      }
+    }
+  }
+
+  const message = (error as any)?.message;
+  if (typeof message === 'string' && message.trim()) return message.trim();
+  return fallback;
+};
+
+const syncQuiz4DataToProfile = async (): Promise<void> => {
+  const citizenshipPayload =
+    formData.citizenship === 'other'
+      ? (formData.otherCitizenship?.trim() || 'Другое')
+      : formData.citizenship;
+
+  await sendRequest('post', '/ajax_vue/ajax/profile/updatePassport.php', {
+    'citysenship-profile': citizenshipPayload,
+    'issued-profile': formData.passportIssuedBy || '',
+    fam: formData.lastName || '',
+    'number-profile': formData.passportNumber || '',
+    imya: formData.firstName || '',
+    'date-profile': formatPassportDateForProfile(formData.passportIssueDate || ''),
+    otch: formData.middleName || '',
+    'adress-profile': formData.registrationAddress || '',
+    ...(formData.citizenship === 'other' && formData.otherCitizenship?.trim()
+      ? { 'citysenship-profile-others': formData.otherCitizenship.trim() }
+      : {}),
+  });
+
+  if (formData.userType === 'entrepreneur') {
+    await sendRequest('post', '/ajax_vue/ajax/profile/updateRek2.php', {
+      'sp-profile': formData.entrepreneurFullName || '',
+      'num-ogr-profile': formData.ogrn || '',
+      'addr-sp-profile': formData.legalAddress || '',
+      'in-sp-profile': formData.inn || '',
+      'rs-sp-profile': formData.accountNumber || '',
+      'bank-sp-profile': formData.bankName || '',
+      'in-bank-sp-profile': formData.bankInn || '',
+      'b-sp-profile': formData.bankBik || '',
+      'ks-sp-profile': formData.correspondentAccount || '',
+      'email-sp-profile': formData.entrepreneurEmail || '',
+    });
+    return;
+  }
+
+  await sendRequest('post', '/ajax_vue/ajax/profile/updateRek1.php', {
+    'sp-profile': `${formData.lastName} ${formData.firstName} ${formData.middleName}`.trim(),
+    'rs-sp-profile': formData.accountNumber || '',
+    'b-sp-profile': formData.bankBik || '',
+  });
+};
+
 const validateField = (fieldName: keyof typeof errors) => {
+  if (isNonRuAccount.value) {
+    errors[fieldName] = '';
+    return true;
+  }
+
   const value = formData[fieldName as keyof typeof formData] as string;
   errors[fieldName] = '';
   
@@ -533,7 +737,9 @@ const validateField = (fieldName: keyof typeof errors) => {
       if (!validateAccountNumber(value)) errors[fieldName] = 'Счет должен состоять из 20 цифр';
       break;
     case 'passportNumber':
-      if (!validatePassportNumber(value)) errors.passportNumber = 'Серия и номер должны состоять из 10 цифр';
+      if (!isNonRuAccount.value && !validatePassportNumber(value)) {
+        errors.passportNumber = 'Серия и номер должны состоять из 10 цифр';
+      }
       break;
     case 'passportIssueDate':
       if (dayjs(value).isAfter(dayjs())) errors.passportIssueDate = 'Дата выдачи не может быть в будущем';
@@ -555,6 +761,11 @@ const validateField = (fieldName: keyof typeof errors) => {
 };
 
 const validateForm = (): boolean => {
+  if (isNonRuAccount.value) {
+    Object.keys(errors).forEach(key => errors[key as keyof typeof errors] = '');
+    return true;
+  }
+
   let isValid = true;
   Object.keys(errors).forEach(key => errors[key as keyof typeof errors] = '');
   
@@ -583,6 +794,11 @@ const validateForm = (): boolean => {
       'correspondentAccount',
       'entrepreneurEmail'
     );
+  } else {
+    fieldsToValidate.push(
+      'accountNumber',
+      'bankBik',
+    );
   }
   
   fieldsToValidate.forEach(field => {
@@ -608,10 +824,22 @@ const handleCitizenshipChange = () => {
 const goBack = () => emit('go-back');
 
 const goNext = async () => {
-  if (validateForm()) {
-    // Сохраняем состояние перед переходом
+  if (isNonRuAccount.value) {
     await saveStateToDB();
     emit('go-next');
+    return;
+  }
+
+  if (validateForm()) {
+    try {
+      await syncQuiz4DataToProfile();
+      // Оставляем сохранение шага в БД для локальной навигации внутри текущего прохождения
+      await saveStateToDB();
+      emit('go-next');
+    } catch (error) {
+      console.error('Quiz4: Ошибка синхронизации данных профиля:', error);
+      ElMessage.error(getApiErrorMessage(error));
+    }
   } else {
     ElMessage.error('Пожалуйста, заполните все обязательные поля правильно');
   }
@@ -629,10 +857,15 @@ watch(
   () => formData.userType,
   (newVal, oldVal) => {
     if (!dataLoaded.value) return;
+    if (newVal === 'entrepreneur' && !canUseEntrepreneur.value) {
+      formData.userType = 'individual';
+      return;
+    }
 
     if (oldVal === 'entrepreneur' && newVal === 'individual') {
       snapshotEntrepreneurBackupFromForm();
       clearEntrepreneurFieldsOnly();
+      restoreIndividualProfileSeedToForm();
       clearEntrepreneurFieldErrors();
     } else if (oldVal === 'individual' && newVal === 'entrepreneur') {
       if (
@@ -715,7 +948,7 @@ watch(() => formData.ogrn, () => {
 });
 
 watch(() => formData.accountNumber, () => {
-  if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
+  if (dataLoaded.value) debouncedSave();
 });
 
 watch(() => formData.bankName, () => {
@@ -727,7 +960,7 @@ watch(() => formData.bankInn, () => {
 });
 
 watch(() => formData.bankBik, () => {
-  if (dataLoaded.value && formData.userType === 'entrepreneur') debouncedSave();
+  if (dataLoaded.value) debouncedSave();
 });
 
 watch(() => formData.correspondentAccount, () => {
@@ -741,12 +974,8 @@ onMounted(async () => {
   try {
     // Сначала инициализируем БД
     await initDB();
-    
-    // Затем загружаем сохраненное состояние
-    await loadStateFromDB();
-    console.log('Quiz4: After loadStateFromDB - userType:', formData.userType);
-    
-    // Потом данные с сервера (только в пустые поля)
+
+    // Критичные данные (паспорт / реквизиты) всегда берем из актуального профиля.
     await loadUserData();
     console.log('Quiz4: After loadUserData - userType:', formData.userType);
     
@@ -811,7 +1040,7 @@ onUnmounted(() => {
           >
           <span class="form__label_text">Физическое лицо</span>
         </label>
-        <label class="form__label">
+        <label v-if="canUseEntrepreneur" class="form__label">
           <input 
             type="radio" 
             v-model="formData.userType" 
@@ -826,6 +1055,45 @@ onUnmounted(() => {
         {{ errors.userType }}
       </div>
     </div>
+
+    <!-- Поля для физлица -->
+    <template v-if="formData.userType === 'individual' && !isNonRuAccount">
+      <div class="form__group">
+        <label for="individualAccountNumber" class="form__label button">Расчётный счёт<span>*</span></label>
+        <el-input
+          id="individualAccountNumber"
+          v-model="formData.accountNumber"
+          type="text"
+          :class="{ 'error': errors.accountNumber }"
+          placeholder="Введите расчётный счёт"
+          maxlength="20"
+          @blur="validateField('accountNumber')"
+          @input="errors.accountNumber = ''"
+          size="large"
+        />
+        <div v-if="errors.accountNumber" class="error text_very">
+          {{ errors.accountNumber }}
+        </div>
+      </div>
+
+      <div class="form__group">
+        <label for="individualBankBik" class="form__label button">БИК банка<span>*</span></label>
+        <el-input
+          id="individualBankBik"
+          v-model="formData.bankBik"
+          type="text"
+          :class="{ 'error': errors.bankBik }"
+          placeholder="Введите БИК банка"
+          maxlength="9"
+          @blur="validateField('bankBik')"
+          @input="errors.bankBik = ''"
+          size="large"
+        />
+        <div v-if="errors.bankBik" class="error text_very">
+          {{ errors.bankBik }}
+        </div>
+      </div>
+    </template>
 
     <!-- Поля для ИП -->
     <template v-if="formData.userType === 'entrepreneur'">

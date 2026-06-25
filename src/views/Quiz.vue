@@ -26,7 +26,7 @@
               </li>
               <li>
                 <p>После заполнения этой формы, пожалуйста, напишите сообщение в формате <strong>"Ваш псевдоним - Название релиза - ДИСТРИБУЦИЯ"</strong> в сообщения паблика 
-                  <a href="https://vk.com/vauvisionlabel" target="_blank" rel="noopener noreferrer">vk.com/vauvisionlabel</a>, либо <a href="https://vk.com/vauvisionlabel" target="_blank" rel="noopener noreferrer">телеграмм</a>.
+                  <a href="https://vk.com/vauvisionlabel" target="_blank" rel="noopener noreferrer">vk.com/vauvisionlabel</a>, либо <a href="https://t.me/vauvision_bot" target="_blank" rel="noopener noreferrer">телеграмм</a>.
                 </p>
               </li>
               <li>
@@ -69,24 +69,24 @@
 import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import QuizForm from "@/components/layout/QuizForm.vue";
-import { SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET } from "@/composables/labelArtistsMenu";
+import { useQuizSessionStore } from "@/composables/quizSessionStore";
+import { resetQuizDraft } from "@/utils/quizDraftReset";
 import {
   parsePaymentQueryParam,
   paymentQueryNeedsNormalization,
   type QuizPaymentReturnStatus,
 } from '@/utils/quizPaymentQuery';
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Tr from "@/i18n/translation";
 
 const route = useRoute();
 const router = useRouter();
+const quizSessionStore = useQuizSessionStore();
 
 // Состояния для переключения
 const showForm = ref(false);
 const currentStep = ref(1);
-const isRestarting = ref(false);
-const hasSavedData = ref(true);
 
 /** Возврат с оплаты на шаг 8 — показ PaymentStatus в QuizForm */
 const paymentReturnStatus = computed<QuizPaymentReturnStatus | null>(() =>
@@ -117,6 +117,8 @@ const clearPaymentQueryFromUrl = async (): Promise<void> => {
 
 const applyPaymentReturnScreen = (): void => {
   if (!parsePaymentQueryParam(route.query.payment)) return;
+  quizSessionStore.setCurrentStep(8);
+  quizSessionStore.setMaxReachableStep(8);
   showForm.value = true;
   currentStep.value = 8;
 };
@@ -137,62 +139,6 @@ watch(
   },
   { immediate: true },
 );
-
-// Проверка наличия сохранений в IndexedDB
-const checkSavedData = async () => {
-  try {
-    // Проверяем существует ли база данных
-    const databases = await indexedDB.databases();
-    const quizDBExists = databases.some(db => db.name === 'quizDB');
-    
-    if (!quizDBExists) {
-      console.log('База данных quizDB не существует');
-      hasSavedData.value = false;
-      return;
-    }
-    
-    // Открываем базу данных
-    const request = indexedDB.open('quizDB', 2);
-    
-    request.onerror = () => {
-      console.log('Ошибка открытия базы данных');
-      hasSavedData.value = false;
-    };
-    
-    request.onsuccess = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      
-      // Проверяем существует ли хранилище
-      if (!db.objectStoreNames.contains('quizState')) {
-        console.log('Хранилище quizState не существует');
-        hasSavedData.value = false;
-        db.close();
-        return;
-      }
-      
-      // Проверяем есть ли данные
-      const transaction = db.transaction(['quizState'], 'readonly');
-      const store = transaction.objectStore('quizState');
-      const getAllRequest = store.getAll();
-      
-      getAllRequest.onsuccess = () => {
-        const hasData = getAllRequest.result.length > 0;
-        hasSavedData.value = hasData;
-        console.log('Проверка сохранений:', hasData, 'записей:', getAllRequest.result.length);
-        db.close();
-      };
-      
-      getAllRequest.onerror = () => {
-        hasSavedData.value = false;
-        db.close();
-      };
-    };
-    
-  } catch (error) {
-    console.error('Ошибка проверки сохранений:', error);
-    hasSavedData.value = false;
-  }
-};
 
 // Перед входом в форму — проверка паспорта и реквизитов (как на прод-сборке)
 const showQuizForm = async () => {
@@ -217,214 +163,38 @@ const showQuizForm = async () => {
     /* без сети / ошибка проверки — не блокируем оформление */
   }
   await clearPaymentQueryFromUrl();
+  quizSessionStore.resetSession();
+  quizSessionStore.setCurrentStep(1);
+  quizSessionStore.setMaxReachableStep(1);
+  await resetQuizDraft();
+  currentStep.value = 1;
   showForm.value = true;
 };
 
 // Функция для переключения шагов
 const goToStep = (step: number) => {
+  if (!quizSessionStore.canNavigateToStep(step)) return;
   currentStep.value = step;
+  quizSessionStore.setCurrentStep(step);
 };
 
 // Функция для возврата к превью
 const handleGoBack = () => {
   showForm.value = false;
   currentStep.value = 1;
-  // При возврате проверяем наличие сохранений
-  checkSavedData();
+  quizSessionStore.resetSession();
 };
 
-// Функция для принудительного закрытия всех соединений с IndexedDB
-const forceCloseAllConnections = (dbName: string): Promise<void> => {
-  return new Promise((resolve) => {
-    console.log(`🔄 Принудительное закрытие соединений с ${dbName}...`);
-    
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    const tryClose = () => {
-      attempts++;
-      
-      try {
-        const request = indexedDB.open(dbName);
-        
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          
-          if (db.close) {
-            db.close();
-            console.log(`✅ Соединение с ${dbName} закрыто (попытка ${attempts})`);
-          }
-          
-          if (attempts < maxAttempts) {
-            setTimeout(tryClose, 100);
-          } else {
-            resolve();
-          }
-        };
-        
-        request.onerror = () => {
-          console.log(`⚠️ Не удалось открыть ${dbName} для закрытия`);
-          if (attempts < maxAttempts) {
-            setTimeout(tryClose, 100);
-          } else {
-            resolve();
-          }
-        };
-        
-        request.onblocked = () => {
-          console.log(`⚠️ Открытие ${dbName} заблокировано`);
-          if (attempts < maxAttempts) {
-            setTimeout(tryClose, 200);
-          } else {
-            resolve();
-          }
-        };
-      } catch (error) {
-        console.error(`❌ Ошибка при закрытии ${dbName}:`, error);
-        resolve();
-      }
-    };
-    
-    tryClose();
-  });
+const handleBeforeUnload = () => {
+  quizSessionStore.resetSession();
 };
 
-// Функция для удаления базы данных с таймаутом
-const deleteDatabase = (dbName: string): Promise<boolean> => {
-  return new Promise((resolve) => {
-    console.log(`🗑️ Попытка удаления ${dbName}...`);
-    
-    const request = indexedDB.deleteDatabase(dbName);
-    
-    const timeoutId = window.setTimeout(() => {
-      console.log(`⏱️ Таймаут удаления ${dbName}, считаем успешным`);
-      resolve(true);
-    }, 2000);
-    
-    request.onsuccess = () => {
-      window.clearTimeout(timeoutId);
-      console.log(`✅ База данных ${dbName} успешно удалена`);
-      resolve(true);
-    };
-    
-    request.onerror = () => {
-      window.clearTimeout(timeoutId);
-      console.error(`❌ Ошибка при удалении ${dbName}:`, request.error);
-      resolve(false);
-    };
-    
-    request.onblocked = () => {
-      window.clearTimeout(timeoutId);
-      console.warn(`⚠️ Удаление ${dbName} заблокировано, но продолжаем...`);
-      resolve(true);
-    };
-  });
-};
-
-// Функция для очистки localStorage
-const clearLocalStorage = () => {
-  console.log('🔄 Очистка localStorage...');
-  const keysToRemove = [];
-  
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && (key.includes('quiz') || key.includes('form') || key.includes('draft') || key.includes('state'))) {
-      keysToRemove.push(key);
-    }
-  }
-  
-  keysToRemove.forEach(key => {
-    localStorage.removeItem(key);
-    console.log(`🗑️ Удален ключ localStorage: ${key}`);
-  });
-  
-  return keysToRemove.length;
-};
-
-/** Очищает sessionStorage, но восстанавливает ключи переключателя лейбла/артистов. */
-const clearSessionStoragePreserveLabelShell = () => {
-  const preserved: Record<string, string> = {};
-  for (const key of SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET) {
-    try {
-      const v = sessionStorage.getItem(key);
-      if (v !== null) preserved[key] = v;
-    } catch {
-      /* ignore */
-    }
-  }
-  sessionStorage.clear();
-  for (const [key, value] of Object.entries(preserved)) {
-    try {
-      sessionStorage.setItem(key, value);
-    } catch {
-      /* ignore */
-    }
-  }
-};
-
-// Основная функция очистки
-const restartFromBeginning = async () => {
-  if (isRestarting.value) return;
-  
-  isRestarting.value = true;
-  console.log('🔄 Начало очистки всех данных...');
-  
-  try {
-    // 1. Очищаем localStorage
-    const removedCount = clearLocalStorage();
-    console.log(`📦 Очищено ${removedCount} записей из localStorage`);
-    
-    // 2. Очищаем sessionStorage (ключи переключателя лейбла сохраняем)
-    clearSessionStoragePreserveLabelShell();
-    console.log('📦 Очищен sessionStorage (сохранены ключи лейбла)');
-    
-    // 3. Принудительно закрываем соединения с основными БД
-    await forceCloseAllConnections('quizDB');
-    await forceCloseAllConnections('quiz-database');
-    await forceCloseAllConnections('audioDB');
-    await forceCloseAllConnections('filesDB');
-    
-    // 4. Небольшая пауза после закрытия
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // 5. Удаляем базы данных
-    const databasesToDelete = [
-      'quizDB',
-      'quiz-database',
-      'form-data',
-      'quizFormDB',
-      'vauvisionDB',
-      'audioDB',
-      'filesDB'
-    ];
-    
-    await Promise.allSettled(
-      databasesToDelete.map(dbName => deleteDatabase(dbName))
-    );
-    
-    // 6. Финальная пауза
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    console.log('✅ Очистка всех данных завершена');
-    
-    // 7. Обновляем состояние кнопки
-    hasSavedData.value = false;
-    
-    // 8. Перезагружаем страницу для полного обновления
-    window.location.reload();
-    
-  } catch (error) {
-    console.error('❌ Ошибка при очистке:', error);
-    // В случае ошибки все равно перезагружаем
-    window.location.reload();
-  } finally {
-    isRestarting.value = false;
-  }
-};
-
-// При монтировании просто устанавливаем hasSavedData в true
 onMounted(() => {
-  hasSavedData.value = true;
+  window.addEventListener('beforeunload', handleBeforeUnload);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload);
 });
 </script>
 

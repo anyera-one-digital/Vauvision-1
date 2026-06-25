@@ -352,61 +352,94 @@ const handleFinalSubmit = async () => {
     
     if (error.response && error.response.data) {
       const errorData = error.response.data
+      const normalizedErrorData =
+        typeof errorData === 'string'
+          ? { error: errorData }
+          : (errorData || {})
       
       // Обработка ошибок для первой формы
-      if (errorData.first_name) {
-        errors.firstName = Array.isArray(errorData.first_name) ? errorData.first_name[0] : errorData.first_name
+      if (normalizedErrorData.first_name) {
+        errors.firstName = Array.isArray(normalizedErrorData.first_name) ? normalizedErrorData.first_name[0] : normalizedErrorData.first_name
       }
-      if (errorData.last_name) {
-        errors.lastName = Array.isArray(errorData.last_name) ? errorData.last_name[0] : errorData.last_name
+      if (normalizedErrorData.last_name) {
+        errors.lastName = Array.isArray(normalizedErrorData.last_name) ? normalizedErrorData.last_name[0] : normalizedErrorData.last_name
       }
-      if (errorData.referral_code) {
-        errors.referralCode = Array.isArray(errorData.referral_code) ? errorData.referral_code[0] : errorData.referral_code
+      if (normalizedErrorData.referral_code) {
+        errors.referralCode = Array.isArray(normalizedErrorData.referral_code) ? normalizedErrorData.referral_code[0] : normalizedErrorData.referral_code
       }
       
       // Обработка ошибок для второй формы
-      if (errorData.user_type) {
-        secondFormErrors.userType = Array.isArray(errorData.user_type) ? errorData.user_type[0] : errorData.user_type
+      if (normalizedErrorData.user_type) {
+        secondFormErrors.userType = Array.isArray(normalizedErrorData.user_type) ? normalizedErrorData.user_type[0] : normalizedErrorData.user_type
       }
-      if (errorData.executor_name) {
-        secondFormErrors.executorName = Array.isArray(errorData.executor_name) ? errorData.executor_name[0] : errorData.executor_name
+      if (normalizedErrorData.executor_name) {
+        secondFormErrors.executorName = Array.isArray(normalizedErrorData.executor_name) ? normalizedErrorData.executor_name[0] : normalizedErrorData.executor_name
       }
-      if (errorData.label_name) {
-        secondFormErrors.labelName = Array.isArray(errorData.label_name) ? errorData.label_name[0] : errorData.label_name
+      if (normalizedErrorData.label_name) {
+        secondFormErrors.labelName = Array.isArray(normalizedErrorData.label_name) ? normalizedErrorData.label_name[0] : normalizedErrorData.label_name
       }
       
       // Обработка ошибок для третьей формы
-      if (errorData.email) {
-        thirdFormErrors.email = Array.isArray(errorData.email) ? errorData.email[0] : errorData.email
+      if (normalizedErrorData.email) {
+        thirdFormErrors.email = Array.isArray(normalizedErrorData.email) ? normalizedErrorData.email[0] : normalizedErrorData.email
       }
-      if (errorData.phone) {
-        thirdFormErrors.phone = Array.isArray(errorData.phone) ? errorData.phone[0] : errorData.phone
+      if (normalizedErrorData.phone) {
+        thirdFormErrors.phone = Array.isArray(normalizedErrorData.phone) ? normalizedErrorData.phone[0] : normalizedErrorData.phone
       }
-      if (errorData.password) {
-        thirdFormErrors.password = Array.isArray(errorData.password) ? errorData.password[0] : errorData.password
+      if (normalizedErrorData.password) {
+        thirdFormErrors.password = Array.isArray(normalizedErrorData.password) ? normalizedErrorData.password[0] : normalizedErrorData.password
       }
-      if (errorData.personal_data_consent) {
-        thirdFormErrors.personalData = Array.isArray(errorData.personal_data_consent) 
-          ? errorData.personal_data_consent[0] 
-          : errorData.personal_data_consent
+      if (normalizedErrorData.personal_data_consent) {
+        thirdFormErrors.personalData = Array.isArray(normalizedErrorData.personal_data_consent) 
+          ? normalizedErrorData.personal_data_consent[0] 
+          : normalizedErrorData.personal_data_consent
       }
-      if (errorData.privacy_policy_consent) {
-        thirdFormErrors.policy = Array.isArray(errorData.privacy_policy_consent) 
-          ? errorData.privacy_policy_consent[0] 
-          : errorData.privacy_policy_consent
+      if (normalizedErrorData.privacy_policy_consent) {
+        thirdFormErrors.policy = Array.isArray(normalizedErrorData.privacy_policy_consent) 
+          ? normalizedErrorData.privacy_policy_consent[0] 
+          : normalizedErrorData.privacy_policy_consent
       }
+
+      const hasFieldErrors = Boolean(
+        errors.firstName ||
+        errors.lastName ||
+        errors.referralCode ||
+        secondFormErrors.userType ||
+        secondFormErrors.executorName ||
+        secondFormErrors.labelName ||
+        thirdFormErrors.email ||
+        thirdFormErrors.phone ||
+        thirdFormErrors.password ||
+        thirdFormErrors.personalData ||
+        thirdFormErrors.policy
+      )
       
       // Общая ошибка
-      if (!Object.keys(errorData).length && errorData.detail) {
+      if (!hasFieldErrors && normalizedErrorData.non_field_errors) {
         ElMessage({
-          message: errorData.detail,
+          message: Array.isArray(normalizedErrorData.non_field_errors) 
+            ? normalizedErrorData.non_field_errors[0] 
+            : normalizedErrorData.non_field_errors,
           type: 'error',
         });
-      } else if (errorData.non_field_errors) {
+      } else if (!hasFieldErrors && normalizedErrorData.detail) {
         ElMessage({
-          message: Array.isArray(errorData.non_field_errors) 
-            ? errorData.non_field_errors[0] 
-            : errorData.non_field_errors,
+          message: normalizedErrorData.detail,
+          type: 'error',
+        });
+      } else if (!hasFieldErrors && normalizedErrorData.message) {
+        ElMessage({
+          message: normalizedErrorData.message,
+          type: 'error',
+        });
+      } else if (!hasFieldErrors && normalizedErrorData.error) {
+        ElMessage({
+          message: normalizedErrorData.error,
+          type: 'error',
+        });
+      } else if (!hasFieldErrors) {
+        ElMessage({
+          message: 'Не удалось завершить регистрацию. Проверьте данные и попробуйте снова.',
           type: 'error',
         });
       }
@@ -499,6 +532,27 @@ onUnmounted(() => {
             <p class="form__description text_small">
               Автоматический переход к авторизации через {{ redirectCountdown }} сек.
             </p>
+            <p class="auth__support-note text_very">
+              Если вы допустили ошибку или у вас не получается подтвердить регистрацию, напишите нам в
+              поддержку в
+              <a
+                class="auth__support-link"
+                href="https://vk.com/vauvisionlabel"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ВК
+              </a>
+              или в
+              <a
+                class="auth__support-link"
+                href="https://t.me/vauvision_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ТГ
+              </a>
+            </p>
             <div class="form__buttons">
               <button
                 class="form__send button__black button"
@@ -506,6 +560,14 @@ onUnmounted(() => {
               >
                 <span>Перейти к авторизации</span>
               </button>
+              <a
+                class="form__back button__second button"
+                href="https://vk.com/vauvisionlabel"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>Написать нам в поддержку</span>
+              </a>
             </div>
           </div>
 
@@ -918,6 +980,21 @@ onUnmounted(() => {
 .auth__success {
   .form__description {
     margin-bottom: 10px;
+  }
+}
+
+.auth__support-note {
+  color: var(--el-text-color-secondary);
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+
+.auth__support-link {
+  color: var(--el-color-primary);
+  text-decoration: underline;
+
+  &:hover {
+    text-decoration: none;
   }
 }
 

@@ -10,6 +10,7 @@ import Quiz5 from "@/components/layout/Quiz/Quiz5.vue";
 import Quiz6 from "@/components/layout/Quiz/Quiz6.vue";
 import Quiz7 from "@/components/layout/Quiz/Quiz7.vue";
 import Quiz8 from "@/components/layout/Quiz/Quiz8.vue";
+import { useQuizSessionStore } from "@/composables/quizSessionStore";
 import PaymentStatus from "@/components/layout/Quiz/PaymentStatus.vue";
 
 const emit = defineEmits<{
@@ -61,6 +62,8 @@ interface AlbumData {
 }
 
 const currentStep = ref(props.currentStep);
+const quizSessionStore = useQuizSessionStore();
+quizSessionStore.setCurrentStep(props.currentStep);
 
 const paymentRetryUsdt = ref("");
 const paymentRetryCard = ref("");
@@ -94,6 +97,10 @@ watch(
   () => props.currentStep,
   (v) => {
     currentStep.value = v;
+    quizSessionStore.setCurrentStep(v);
+    if (v > quizSessionStore.state.maxReachableStep) {
+      quizSessionStore.setMaxReachableStep(v);
+    }
   },
 );
 
@@ -252,9 +259,20 @@ const areAllAlbumsComplete = (): boolean => {
   );
 };
 
-const goToStep = (step: number) => {
+const goToStep = (step: number, options: { preserveForward?: boolean } = {}) => {
+  if (!quizSessionStore.canNavigateToStep(step)) return;
+  if (step < currentStep.value && !options.preserveForward) {
+    quizSessionStore.invalidateFromStep(step + 1);
+    quizSessionStore.setMaxReachableStep(step);
+  }
   currentStep.value = step;
+  quizSessionStore.setCurrentStep(step);
   emit("update:current-step", step);
+};
+
+const completeStepAndGoNext = (completedStep: number) => {
+  quizSessionStore.completeStep(completedStep);
+  goToStep(completedStep + 1, { preserveForward: true });
 };
 
 const handleGoBack = () => {
@@ -286,6 +304,7 @@ const fullReset = async () => {
 
   // Сбрасываем шаг на 1
   currentStep.value = 1;
+  quizSessionStore.resetSession();
 
   try {
     sessionStorage.removeItem(QUIZ_LAST_PAYMENT_LINKS_KEY);
@@ -335,49 +354,49 @@ defineExpose({
       v-if="currentStep === 1"
       ref="quiz1Ref"
       @go-back="handleGoBack"
-      @go-next="goToStep(2)"
+      @go-next="completeStepAndGoNext(1)"
     />
 
     <!-- Шаг 2 -->
     <Quiz2
       v-if="currentStep === 2"
       @go-back="handleGoBack"
-      @go-next="goToStep(3)"
+      @go-next="completeStepAndGoNext(2)"
     />
 
     <!-- Шаг 3 -->
     <Quiz3
       v-if="currentStep === 3"
       @go-back="handleGoBack"
-      @go-next="goToStep(4)"
+      @go-next="completeStepAndGoNext(3)"
     />
 
     <!-- Шаг 4 -->
     <Quiz4
       v-if="currentStep === 4"
       @go-back="handleGoBack"
-      @go-next="goToStep(5)"
+      @go-next="completeStepAndGoNext(4)"
     />
 
     <!-- Шаг 5 -->
     <Quiz5
       v-if="currentStep === 5"
       @go-back="handleGoBack"
-      @go-next="goToStep(6)"
+      @go-next="completeStepAndGoNext(5)"
     />
 
     <!-- Шаг 6 -->
     <Quiz6
       v-if="currentStep === 6"
       @go-back="handleGoBack"
-      @go-next="goToStep(7)"
+      @go-next="completeStepAndGoNext(6)"
     />
 
     <!-- Шаг 7 -->
     <Quiz7
       v-if="currentStep === 7"
       @go-back="handleGoBack"
-      @go-next="goToStep(8)"
+      @go-next="completeStepAndGoNext(7)"
     />
 
     <!-- Шаг 8: возврат с оплаты -->
