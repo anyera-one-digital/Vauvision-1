@@ -2869,9 +2869,11 @@ const handleUpcClick = (release: Release) => {
 };
 
 const getReleaseLinkPlaceholderLabel = (
-  release: Release
+  _release: Release
 ): 'уточнить в поддержке' | 'создать ссылку' => {
-  return isReleaseDayReached(release) ? 'создать ссылку' : 'уточнить в поддержке';
+  // Кнопка доступна всегда (в т.ч. до даты релиза): пресейв BandLink нужен именно
+  // для предстоящих релизов, а смартлинк VauVision дозаполнится площадками после выхода.
+  return 'создать ссылку';
 };
 
 /** Идёт ли сейчас создание смартлинка для релиза (защита от повторных кликов). */
