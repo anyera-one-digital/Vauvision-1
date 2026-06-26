@@ -993,7 +993,7 @@
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import DOMPurify from "dompurify";
 import { sendRequest } from '@/utils/api';
 import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
@@ -2874,8 +2874,93 @@ const getReleaseLinkPlaceholderLabel = (
   return isReleaseDayReached(release) ? 'создать ссылку' : 'уточнить в поддержке';
 };
 
-const handleCreateReleaseLinkPlaceholder = (_release: Release) => {
-  ElMessage.info('Раздел «Создать ссылку» будет доступен после подключения сервиса по API.');
+/** Идёт ли сейчас создание смартлинка для релиза (защита от повторных кликов). */
+const creatingSmartlinkIds = ref<Set<string | number>>(new Set());
+
+/**
+ * Вызывает создание смартлинка по UPC. UPC передаётся только если пользователь
+ * ввёл его вручную (когда у релиза кода нет). Возвращает true при успехе.
+ */
+const requestSmartlink = async (release: Release, upc?: string): Promise<boolean> => {
+  const loading = ElMessage({ type: 'info', message: 'Создаём ссылку…', duration: 0 });
+  try {
+    const payload: Record<string, unknown> = { RELEASE_ID: release.id };
+    if (upc) payload.UPC = upc;
+
+    const response = await sendRequest(
+      'post',
+      '/ajax_vue/ajax/profile/createSmartlink.php',
+      payload
+    );
+
+    const url = String(response.data?.data?.url ?? '').trim();
+    if (!url) {
+      ElMessage.error(response.data?.message || 'BandLink не вернул ссылку на смартлинк');
+      return false;
+    }
+
+    release.link = url;
+    ElMessage.success(
+      response.data?.data?.cached ? 'Ссылка уже создана' : 'Смартлинк создан'
+    );
+    return true;
+  } finally {
+    loading.close();
+  }
+};
+
+/**
+ * Запрашивает у пользователя UPC код и создаёт смартлинк.
+ * Открывается, когда у релиза нет UPC (бэк вернул need_upc).
+ */
+const promptUpcAndCreateSmartlink = async (release: Release): Promise<void> => {
+  let upcInput: string;
+  try {
+    const { value } = await ElMessageBox.prompt(
+      'Введите UPC код вашего релиза',
+      'Создание ссылки',
+      {
+        confirmButtonText: 'Создать ссылку',
+        cancelButtonText: 'Отмена',
+        inputPlaceholder: 'UPC (от 12 до 255 цифр)',
+        inputValidator: (val: string) => {
+          const digits = (val || '').replace(/\D+/g, '');
+          return /^[0-9]{12,255}$/.test(digits)
+            ? true
+            : 'UPC должен содержать от 12 до 255 цифр';
+        },
+      }
+    );
+    upcInput = (value || '').replace(/\D+/g, '');
+  } catch {
+    return; // пользователь закрыл/отменил окно
+  }
+
+  try {
+    await requestSmartlink(release, upcInput);
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || 'Не удалось создать ссылку');
+  }
+};
+
+const handleCreateReleaseLinkPlaceholder = async (release: Release): Promise<void> => {
+  if (creatingSmartlinkIds.value.has(release.id)) {
+    return;
+  }
+  creatingSmartlinkIds.value.add(release.id);
+  try {
+    await requestSmartlink(release);
+  } catch (error: any) {
+    const status = error?.response?.status;
+    const needUpc = error?.response?.data?.data?.need_upc;
+    if (status === 422 && needUpc) {
+      await promptUpcAndCreateSmartlink(release);
+    } else {
+      ElMessage.error(error?.response?.data?.message || 'Не удалось создать ссылку');
+    }
+  } finally {
+    creatingSmartlinkIds.value.delete(release.id);
+  }
 };
 
 const handleReleaseServiceComingSoon = () => {
