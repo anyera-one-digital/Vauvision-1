@@ -2961,10 +2961,10 @@ const handleCreateReleaseLinkPlaceholder = async (release: Release): Promise<voi
   let mode: SmartlinkMode;
   try {
     await ElMessageBox.confirm(
-      'Смартлинк VauVision — страница со всеми площадками на нашем домене. Пресейв BandLink — страница band.link с пресейвом (для ещё не вышедших релизов).',
+      'Смартлинк VAUVISION — страница со всеми площадками на нашем домене. Пресейв BandLink — страница band.link с пресейвом (для ещё не вышедших релизов).',
       'Какую ссылку создать?',
       {
-        confirmButtonText: 'Смартлинк VauVision',
+        confirmButtonText: 'Смартлинк VAUVISION',
         cancelButtonText: 'Пресейв BandLink',
         distinguishCancelAndClose: true,
         type: 'info',
