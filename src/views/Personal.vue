@@ -2881,10 +2881,16 @@ const creatingSmartlinkIds = ref<Set<string | number>>(new Set());
  * Вызывает создание смартлинка по UPC. UPC передаётся только если пользователь
  * ввёл его вручную (когда у релиза кода нет). Возвращает true при успехе.
  */
-const requestSmartlink = async (release: Release, upc?: string): Promise<boolean> => {
+type SmartlinkMode = 'vauvision' | 'bandlink';
+
+const requestSmartlink = async (
+  release: Release,
+  upc?: string,
+  mode: SmartlinkMode = 'vauvision'
+): Promise<boolean> => {
   const loading = ElMessage({ type: 'info', message: 'Создаём ссылку…', duration: 0 });
   try {
-    const payload: Record<string, unknown> = { RELEASE_ID: release.id };
+    const payload: Record<string, unknown> = { RELEASE_ID: release.id, link_type: mode };
     if (upc) payload.UPC = upc;
 
     const response = await sendRequest(
@@ -2895,14 +2901,12 @@ const requestSmartlink = async (release: Release, upc?: string): Promise<boolean
 
     const url = String(response.data?.data?.url ?? '').trim();
     if (!url) {
-      ElMessage.error(response.data?.message || 'BandLink не вернул ссылку на смартлинк');
+      ElMessage.error(response.data?.message || 'BandLink не вернул ссылку');
       return false;
     }
 
     release.link = url;
-    ElMessage.success(
-      response.data?.data?.cached ? 'Ссылка уже создана' : 'Смартлинк создан'
-    );
+    ElMessage.success(response.data?.data?.cached ? 'Ссылка уже создана' : 'Ссылка создана');
     return true;
   } finally {
     loading.close();
@@ -2910,10 +2914,13 @@ const requestSmartlink = async (release: Release, upc?: string): Promise<boolean
 };
 
 /**
- * Запрашивает у пользователя UPC код и создаёт смартлинк.
+ * Запрашивает у пользователя UPC код и создаёт ссылку выбранного типа.
  * Открывается, когда у релиза нет UPC (бэк вернул need_upc).
  */
-const promptUpcAndCreateSmartlink = async (release: Release): Promise<void> => {
+const promptUpcAndCreateSmartlink = async (
+  release: Release,
+  mode: SmartlinkMode = 'vauvision'
+): Promise<void> => {
   let upcInput: string;
   try {
     const { value } = await ElMessageBox.prompt(
@@ -2937,7 +2944,7 @@ const promptUpcAndCreateSmartlink = async (release: Release): Promise<void> => {
   }
 
   try {
-    await requestSmartlink(release, upcInput);
+    await requestSmartlink(release, upcInput, mode);
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || 'Не удалось создать ссылку');
   }
@@ -2947,14 +2954,37 @@ const handleCreateReleaseLinkPlaceholder = async (release: Release): Promise<voi
   if (creatingSmartlinkIds.value.has(release.id)) {
     return;
   }
+
+  // Выбор типа ссылки: наш лендинг VauVision или страница BandLink с пресейвом
+  let mode: SmartlinkMode;
+  try {
+    await ElMessageBox.confirm(
+      'Смартлинк VauVision — страница со всеми площадками на нашем домене. Пресейв BandLink — страница band.link с пресейвом (для ещё не вышедших релизов).',
+      'Какую ссылку создать?',
+      {
+        confirmButtonText: 'Смартлинк VauVision',
+        cancelButtonText: 'Пресейв BandLink',
+        distinguishCancelAndClose: true,
+        type: 'info',
+      }
+    );
+    mode = 'vauvision';
+  } catch (action) {
+    if (action === 'cancel') {
+      mode = 'bandlink';
+    } else {
+      return; // окно закрыто — отмена
+    }
+  }
+
   creatingSmartlinkIds.value.add(release.id);
   try {
-    await requestSmartlink(release);
+    await requestSmartlink(release, undefined, mode);
   } catch (error: any) {
     const status = error?.response?.status;
     const needUpc = error?.response?.data?.data?.need_upc;
     if (status === 422 && needUpc) {
-      await promptUpcAndCreateSmartlink(release);
+      await promptUpcAndCreateSmartlink(release, mode);
     } else {
       ElMessage.error(error?.response?.data?.message || 'Не удалось создать ссылку');
     }
