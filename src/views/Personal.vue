@@ -600,6 +600,44 @@
     </div>
   </div>
 </Teleport>
+
+<!-- Попап выбора типа ссылки релиза -->
+<Teleport to="body">
+  <div class="popup" v-if="showSmartlinkTypePopup" @click.self="closeAllPopups">
+    <div class="popup__content popup__content_small">
+      <div class="popup__header">
+        <h5 class="popup__title">Какую ссылку создать?</h5>
+        <button class="popup__close" @click="closeAllPopups">×</button>
+      </div>
+      <div class="popup__body popup__smartlink-body">
+        <el-select
+          v-model="selectedSmartlinkType"
+          class="popup__smartlink-select"
+          popper-class="popup-select-popper"
+        >
+          <el-option label="Смартлинк VAUVISION" value="vauvision" />
+          <el-option label="Пресейв BandLink" value="bandlink" />
+        </el-select>
+        <p class="popup__smartlink-hint">
+          <template v-if="selectedSmartlinkType === 'vauvision'">
+            Страница со всеми площадками на нашем домене.
+          </template>
+          <template v-else>
+            Страница band.link с пресейвом — для ещё не вышедших релизов.
+          </template>
+        </p>
+        <div class="popup__actions popup__actions_two_buttons">
+          <button class="popup__button button button__black" @click="closeAllPopups">
+            <span>Отмена</span>
+          </button>
+          <button class="popup__button button button__red" @click="confirmSmartlinkType">
+            <span>Создать ссылку</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</Teleport>
 <!-- Попап для выбора года -->
 <Teleport to="body">
   <div class="popup" v-if="showReportPopup" @click.self="closeAllPopups">
@@ -1288,6 +1326,10 @@ const showLowBalancePopup = ref(false);
 const showImagesPopup = ref(false);
 const showNoReportsPopup = ref(false);
 const showPayoutSuccessPopup = ref(false);
+// Попап выбора типа создаваемой ссылки (смартлинк VAUVISION / пресейв BandLink)
+const showSmartlinkTypePopup = ref(false);
+const smartlinkTypeRelease = ref<Release | null>(null);
+const selectedSmartlinkType = ref<SmartlinkMode>('vauvision');
 const actData = ref<ActResponse | null>(null);
 const userLabel = computed(() => (isLabelOwner.value ? 1 : 0));
 const showConfirmReportPopup = ref(false);
@@ -2066,6 +2108,8 @@ const closeAllPopups = () => {
   showNoReportsPopup.value = false;
   showPayoutSuccessPopup.value = false;
   showConfirmReportPopup.value = false; // Добавьте эту строку
+  showSmartlinkTypePopup.value = false;
+  smartlinkTypeRelease.value = null;
   selectedYear.value = '';
   selectedQuarter.value = '';
   availableQuarters.value = [];
@@ -2952,33 +2996,22 @@ const promptUpcAndCreateSmartlink = async (
   }
 };
 
-const handleCreateReleaseLinkPlaceholder = async (release: Release): Promise<void> => {
+const handleCreateReleaseLinkPlaceholder = (release: Release): void => {
   if (creatingSmartlinkIds.value.has(release.id)) {
     return;
   }
+  // Открываем попап с выпадающим списком выбора типа ссылки
+  smartlinkTypeRelease.value = release;
+  selectedSmartlinkType.value = 'vauvision';
+  showSmartlinkTypePopup.value = true;
+  document.documentElement.classList.add('noscroll');
+};
 
-  // Выбор типа ссылки: наш лендинг VauVision или страница BandLink с пресейвом
-  let mode: SmartlinkMode;
-  try {
-    await ElMessageBox.confirm(
-      'Смартлинк VAUVISION — страница со всеми площадками на нашем домене. Пресейв BandLink — страница band.link с пресейвом (для ещё не вышедших релизов).',
-      'Какую ссылку создать?',
-      {
-        confirmButtonText: 'Смартлинк VAUVISION',
-        cancelButtonText: 'Пресейв BandLink',
-        distinguishCancelAndClose: true,
-        type: 'info',
-      }
-    );
-    mode = 'vauvision';
-  } catch (action) {
-    if (action === 'cancel') {
-      mode = 'bandlink';
-    } else {
-      return; // окно закрыто — отмена
-    }
-  }
-
+/** Создаёт ссылку выбранного типа для релиза (с обработкой need_upc). */
+const createSmartlinkForRelease = async (
+  release: Release,
+  mode: SmartlinkMode
+): Promise<void> => {
   creatingSmartlinkIds.value.add(release.id);
   try {
     await requestSmartlink(release, undefined, mode);
@@ -2993,6 +3026,15 @@ const handleCreateReleaseLinkPlaceholder = async (release: Release): Promise<voi
   } finally {
     creatingSmartlinkIds.value.delete(release.id);
   }
+};
+
+/** Подтверждение выбора типа в попапе — закрывает окно и запускает создание. */
+const confirmSmartlinkType = async (): Promise<void> => {
+  const release = smartlinkTypeRelease.value;
+  const mode = selectedSmartlinkType.value;
+  if (!release) return;
+  closeAllPopups();
+  await createSmartlinkForRelease(release, mode);
 };
 
 const handleReleaseServiceComingSoon = () => {
@@ -4829,6 +4871,21 @@ onUnmounted(() => {
 
   &__year-select {
     width: 100%;
+  }
+
+  &__smartlink-body {
+    text-align: center;
+  }
+
+  &__smartlink-select {
+    width: 100%;
+  }
+
+  &__smartlink-hint {
+    margin: 12px 0 0;
+    color: var(--text-gray);
+    font-size: 14px;
+    text-align: center;
   }
 
   &__loading-select {
