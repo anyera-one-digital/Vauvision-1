@@ -26,5 +26,13 @@
   --safe-area-inset-left: env(safe-area-inset-left);
   --el-input-hover-border-color: #AB1115;
   --el-color-primary: #AB1115;
+  /* Производные оттенки Element Plus под бренд-красный. Без них hover/active
+     кнопок в диалогах (ElMessageBox/ElMessage) уходят в дефолтный синий EP. */
+  --el-color-primary-light-3: #C4585B;
+  --el-color-primary-light-5: #D5888A;
+  --el-color-primary-light-7: #E6B8B9;
+  --el-color-primary-light-8: #EECFD0;
+  --el-color-primary-light-9: #F7E7E8;
+  --el-color-primary-dark-2: #890E11;
   --scroll: 0;
 }

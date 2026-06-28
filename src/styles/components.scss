@@ -131,6 +131,17 @@ textarea,
   max-height: 150px;
 }
 
+/* Текст в диалогах ElMessageBox выровнен по центру (по просьбе клиента) */
+.el-message-box__header,
+.el-message-box__title,
+.el-message-box__content,
+.el-message-box__message {
+  text-align: center;
+}
+.el-message-box__message p {
+  text-align: center;
+}
+
 .ProseMirror {
   min-height: 80px;
   max-height: 200px;
