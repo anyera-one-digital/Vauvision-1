@@ -192,19 +192,46 @@
                             <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
                           </svg>
                         </div>
+                        <!-- Только поддержка (без выбора типа) -->
                         <div
-                          v-else
+                          v-else-if="getReleaseLinkPlaceholderLabel(release) === 'уточнить в поддержке'"
                           class="personal__releases_code personal__releases_code_action text_small"
                           role="button"
                           tabindex="0"
-                          @click="handleReleaseLinkPlaceholderClick(release)"
-                          @keydown.enter.prevent="handleReleaseLinkPlaceholderClick(release)"
+                          @click="openSupportPage()"
+                          @keydown.enter.prevent="openSupportPage()"
                         >
-                          <span>Ссылка: {{ getReleaseLinkPlaceholderLabel(release) }}</span>
+                          <span>Ссылка: уточнить в поддержке</span>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                           </svg>
                         </div>
+                        <!-- Создать ссылку: выбор типа выпадающим списком прямо из кнопки -->
+                        <el-dropdown
+                          v-else
+                          trigger="click"
+                          class="personal__releases_code-dropdown"
+                          popper-class="smartlink-type-dropdown"
+                          @command="(cmd: 'vauvision' | 'bandlink') => handleSmartlinkCommand(release, cmd)"
+                        >
+                          <div
+                            class="personal__releases_code personal__releases_code_action text_small"
+                            :class="{ 'is-loading': creatingSmartlinkIds.has(release.id) }"
+                            role="button"
+                            tabindex="0"
+                          >
+                            <span>Ссылка: создать ссылку</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+                            </svg>
+                          </div>
+                          <template #dropdown>
+                            <el-dropdown-menu>
+                              <el-dropdown-item command="vauvision">Смартлинк VAUVISION</el-dropdown-item>
+                              <el-dropdown-item command="bandlink">Пресейв BandLink</el-dropdown-item>
+                            </el-dropdown-menu>
+                          </template>
+                        </el-dropdown>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
                           v-if="(!release.tracks || release.tracks.length === 0) && !isReleaseDayReached(release)"
@@ -601,43 +628,6 @@
   </div>
 </Teleport>
 
-<!-- Попап выбора типа ссылки релиза -->
-<Teleport to="body">
-  <div class="popup" v-if="showSmartlinkTypePopup" @click.self="closeAllPopups">
-    <div class="popup__content popup__content_small">
-      <div class="popup__header">
-        <h5 class="popup__title">Какую ссылку создать?</h5>
-        <button class="popup__close" @click="closeAllPopups">×</button>
-      </div>
-      <div class="popup__body popup__smartlink-body">
-        <el-select
-          v-model="selectedSmartlinkType"
-          class="popup__smartlink-select"
-          popper-class="popup-select-popper"
-        >
-          <el-option label="Смартлинк VAUVISION" value="vauvision" />
-          <el-option label="Пресейв BandLink" value="bandlink" />
-        </el-select>
-        <p class="popup__smartlink-hint">
-          <template v-if="selectedSmartlinkType === 'vauvision'">
-            Страница со всеми площадками на нашем домене.
-          </template>
-          <template v-else>
-            Страница band.link с пресейвом — для ещё не вышедших релизов.
-          </template>
-        </p>
-        <div class="popup__actions popup__actions_two_buttons">
-          <button class="popup__button button button__black" @click="closeAllPopups">
-            <span>Отмена</span>
-          </button>
-          <button class="popup__button button button__red" @click="confirmSmartlinkType">
-            <span>Создать ссылку</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</Teleport>
 <!-- Попап для выбора года -->
 <Teleport to="body">
   <div class="popup" v-if="showReportPopup" @click.self="closeAllPopups">
@@ -1326,10 +1316,6 @@ const showLowBalancePopup = ref(false);
 const showImagesPopup = ref(false);
 const showNoReportsPopup = ref(false);
 const showPayoutSuccessPopup = ref(false);
-// Попап выбора типа создаваемой ссылки (смартлинк VAUVISION / пресейв BandLink)
-const showSmartlinkTypePopup = ref(false);
-const smartlinkTypeRelease = ref<Release | null>(null);
-const selectedSmartlinkType = ref<SmartlinkMode>('vauvision');
 const actData = ref<ActResponse | null>(null);
 const userLabel = computed(() => (isLabelOwner.value ? 1 : 0));
 const showConfirmReportPopup = ref(false);
@@ -2108,8 +2094,6 @@ const closeAllPopups = () => {
   showNoReportsPopup.value = false;
   showPayoutSuccessPopup.value = false;
   showConfirmReportPopup.value = false; // Добавьте эту строку
-  showSmartlinkTypePopup.value = false;
-  smartlinkTypeRelease.value = null;
   selectedYear.value = '';
   selectedQuarter.value = '';
   availableQuarters.value = [];
@@ -2996,17 +2980,6 @@ const promptUpcAndCreateSmartlink = async (
   }
 };
 
-const handleCreateReleaseLinkPlaceholder = (release: Release): void => {
-  if (creatingSmartlinkIds.value.has(release.id)) {
-    return;
-  }
-  // Открываем попап с выпадающим списком выбора типа ссылки
-  smartlinkTypeRelease.value = release;
-  selectedSmartlinkType.value = 'vauvision';
-  showSmartlinkTypePopup.value = true;
-  document.documentElement.classList.add('noscroll');
-};
-
 /** Создаёт ссылку выбранного типа для релиза (с обработкой need_upc). */
 const createSmartlinkForRelease = async (
   release: Release,
@@ -3028,26 +3001,17 @@ const createSmartlinkForRelease = async (
   }
 };
 
-/** Подтверждение выбора типа в попапе — закрывает окно и запускает создание. */
-const confirmSmartlinkType = async (): Promise<void> => {
-  const release = smartlinkTypeRelease.value;
-  const mode = selectedSmartlinkType.value;
-  if (!release) return;
-  closeAllPopups();
+/** Выбор типа в выпадающем списке кнопки «создать ссылку» — сразу создаёт ссылку. */
+const handleSmartlinkCommand = async (
+  release: Release,
+  mode: SmartlinkMode
+): Promise<void> => {
+  if (creatingSmartlinkIds.value.has(release.id)) return;
   await createSmartlinkForRelease(release, mode);
 };
 
 const handleReleaseServiceComingSoon = () => {
   ElMessage.info('Сервис в разработке и скоро будет добавлен');
-};
-
-const handleReleaseLinkPlaceholderClick = (release: Release) => {
-  const label = getReleaseLinkPlaceholderLabel(release);
-  if (label === 'уточнить в поддержке') {
-    openSupportPage();
-  } else {
-    handleCreateReleaseLinkPlaceholder(release);
-  }
 };
 
 const openSupportPage = () => {
@@ -3766,6 +3730,36 @@ onUnmounted(() => {
 
   &_code_action {
     cursor: pointer;
+
+    &.is-loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+  }
+
+  // Обёртка el-dropdown для кнопки «создать ссылку» — повторяет размеры _code
+  &_code-dropdown {
+    display: inline-flex;
+    width: calc(50% - 5px);
+    min-width: 140px;
+    vertical-align: top;
+    outline: none;
+
+    @media (max-width: 1919px) {
+      width: calc(50% - 7px);
+    }
+
+    @media (max-width: 767px) {
+      width: calc(50% - 5px);
+    }
+
+    @media (max-width: 480px) {
+      width: 100%;
+    }
+
+    .personal__releases_code {
+      width: 100%;
+    }
   }
 
   &_date {
@@ -4871,21 +4865,6 @@ onUnmounted(() => {
 
   &__year-select {
     width: 100%;
-  }
-
-  &__smartlink-body {
-    text-align: center;
-  }
-
-  &__smartlink-select {
-    width: 100%;
-  }
-
-  &__smartlink-hint {
-    margin: 12px 0 0;
-    color: var(--text-gray);
-    font-size: 14px;
-    text-align: center;
   }
 
   &__loading-select {
