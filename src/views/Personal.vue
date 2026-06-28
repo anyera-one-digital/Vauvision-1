@@ -227,8 +227,8 @@
                           </div>
                           <template #dropdown>
                             <el-dropdown-menu>
-                              <el-dropdown-item command="vauvision">Смартлинк VAUVISION</el-dropdown-item>
-                              <el-dropdown-item command="bandlink">Пресейв BandLink</el-dropdown-item>
+                              <el-dropdown-item command="vauvision">Смартлинк</el-dropdown-item>
+                              <el-dropdown-item command="bandlink">Пресейв</el-dropdown-item>
                             </el-dropdown-menu>
                           </template>
                         </el-dropdown>
