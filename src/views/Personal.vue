@@ -212,32 +212,21 @@
                             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                           </svg>
                         </div>
-                        <!-- Создать ссылку: выбор типа выпадающим списком прямо из кнопки -->
-                        <el-dropdown
+                        <!-- Создать ссылку: один умный смартлинк (до релиза — пресейв, после — площадки) -->
+                        <div
                           v-else
-                          trigger="click"
-                          class="personal__releases_code-dropdown"
-                          popper-class="smartlink-type-dropdown"
-                          @command="(cmd: 'vauvision' | 'bandlink') => handleSmartlinkCommand(release, cmd)"
+                          class="personal__releases_code personal__releases_code_action text_small"
+                          :class="{ 'is-loading': creatingSmartlinkIds.has(release.id) }"
+                          role="button"
+                          tabindex="0"
+                          @click="handleSmartlinkCommand(release, 'vauvision')"
+                          @keydown.enter.prevent="handleSmartlinkCommand(release, 'vauvision')"
                         >
-                          <div
-                            class="personal__releases_code personal__releases_code_action text_small"
-                            :class="{ 'is-loading': creatingSmartlinkIds.has(release.id) }"
-                            role="button"
-                            tabindex="0"
-                          >
-                            <span>Ссылка: создать ссылку</span>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                            </svg>
-                          </div>
-                          <template #dropdown>
-                            <el-dropdown-menu>
-                              <el-dropdown-item command="vauvision">Смартлинк</el-dropdown-item>
-                              <el-dropdown-item command="bandlink">Пресейв</el-dropdown-item>
-                            </el-dropdown-menu>
-                          </template>
-                        </el-dropdown>
+                          <span>Ссылка: создать ссылку</span>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+                          </svg>
+                        </div>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
                           v-if="(!release.tracks || release.tracks.length === 0) && !isReleaseDayReached(release)"
