@@ -506,14 +506,14 @@
 
   /* ---------- tutorial / settings modal ---------- */
   .kk-modal-overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 50;
+    z-index: 1000;
     padding: 16px;
     animation: kk-fade-in 0.2s ease;
   }
