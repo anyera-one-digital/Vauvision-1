@@ -94,6 +94,11 @@
     background: var(--bg-card);
     border-bottom: 1px solid var(--border);
   }
+  .kk-header__logo {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
 
   .kk-steps {
     display: flex;
@@ -130,6 +135,10 @@
     text-align: center;
     padding: 24px;
     overflow: auto;
+  }
+
+  .kk-onboarding__logo {
+    margin-bottom: 20px;
   }
 
   .kk-onboarding__title {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useKaraokeT } from './useKaraokeT'
+import VauvisionLogo from './VauvisionLogo.vue'
 
 defineEmits<{ (e: 'start'): void }>()
 
@@ -21,6 +22,9 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
 
 <template>
   <div class="kk-onboarding">
+    <div class="kk-onboarding__logo">
+      <VauvisionLogo size="lg" />
+    </div>
     <h1 class="kk-onboarding__title">{{ t.onboarding.title }}</h1>
     <h2 class="kk-onboarding__subtitle">{{ t.onboarding.subtitle }}</h2>
 
