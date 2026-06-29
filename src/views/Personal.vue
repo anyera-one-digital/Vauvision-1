@@ -180,6 +180,8 @@
                           </svg>
                         </div>
 
+                        <!-- Пресейв/ссылка релиза: поле + «?» рядом (вне кликабельного чипа) -->
+                        <div class="personal__link_field">
                         <!-- Ссылка на релиз: клик открывает в новой вкладке, иконка — копирует -->
                         <a
                           v-if="release.link && release.link !== 'Нет данных'"
@@ -188,11 +190,7 @@
                           rel="noopener noreferrer"
                           class="personal__releases_code text_small"
                         >
-                          <el-tooltip placement="top" effect="dark" :show-after="80">
-                            <template #content>Если релиз ещё не вышел — вы получаете пресейв.<br>Если вышел — получаете смартлинк (ссылки на площадки).</template>
-                            <span class="personal__link_help" role="button" tabindex="0" aria-label="Что это за ссылка" @click.stop.prevent>?</span>
-                          </el-tooltip>
-                          <span>Ссылка: {{ release.link }}</span>
+                          <span>Пресейв и ссылка: {{ release.link }}</span>
                           <svg
                             width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
                             role="button"
@@ -211,7 +209,7 @@
                           @click="openSupportPage()"
                           @keydown.enter.prevent="openSupportPage()"
                         >
-                          <span>Ссылка: уточнить в поддержке</span>
+                          <span>Пресейв и ссылка: уточнить в поддержке</span>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                           </svg>
@@ -226,14 +224,16 @@
                           @click="handleSmartlinkCommand(release, 'vauvision')"
                           @keydown.enter.prevent="handleSmartlinkCommand(release, 'vauvision')"
                         >
-                          <el-tooltip placement="top" effect="dark" :show-after="80">
-                            <template #content>Если релиз ещё не вышел — вы получаете пресейв.<br>Если вышел — получаете смартлинк (ссылки на площадки).</template>
-                            <span class="personal__link_help" role="button" tabindex="0" aria-label="Что это за ссылка" @click.stop.prevent>?</span>
-                          </el-tooltip>
-                          <span>Ссылка: создать ссылку</span>
+                          <span>Пресейв и ссылка: создать</span>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
                           </svg>
+                        </div>
+                          <!-- «?» рядом с полем (вне кликабельного чипа) -->
+                          <el-tooltip placement="top" effect="dark" :show-after="80">
+                            <template #content>Если релиз ещё не вышел — вы получаете пресейв.<br>Если вышел — получаете смартлинк (ссылки на площадки).</template>
+                            <span class="personal__link_help" role="button" tabindex="0" aria-label="Что это за пресейв и ссылка">?</span>
+                          </el-tooltip>
                         </div>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
@@ -3038,22 +3038,42 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
+/* Поле «Пресейв и ссылка» + значок «?» рядом (вне кликабельного чипа).
+   Обёртка занимает один слот сетки кодов (как обычный чип), внутри —
+   чип растягивается, «?» прижат справа. */
+.personal__link_field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(50% - 5px);
+  min-width: 140px;
+
+  @media (max-width: 1919px) { width: calc(50% - 7px); }
+  @media (max-width: 480px)  { width: 100%; max-width: 100%; }
+
+  .personal__releases_code {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
 .personal__link_help {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
-  margin-right: 6px;
   border: 1px solid currentColor;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   font-weight: 700;
   cursor: help;
-  opacity: 0.6;
-  transition: opacity 0.15s ease;
+  color: var(--text-gray, #888);
+  opacity: 0.7;
+  transition: opacity 0.15s ease, color 0.15s ease;
 
   &:hover { opacity: 1; }
 }
