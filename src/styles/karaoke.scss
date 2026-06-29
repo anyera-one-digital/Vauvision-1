@@ -237,6 +237,9 @@
   }
 
   .kk-onboarding__logo {
+    width: 100%;
+    display: flex;
+    justify-content: center;
     margin-bottom: 20px;
   }
 
@@ -256,13 +259,16 @@
   }
 
   .kk-wave {
+    width: 100%;
+    display: flex;
+    justify-content: center;
     margin: 16px 0 24px;
     transition: all 1s ease;
     opacity: 0;
     transform: scale(0.9);
     &.is-shown { opacity: 1; transform: scale(1); }
   }
-  .kk-wave svg { overflow: visible; }
+  .kk-wave svg { width: 100%; max-width: 280px; height: auto; overflow: visible; }
   .wave-path { stroke-linecap: round; }
   .wave-1 { animation: kk-wave-1 2s ease-in-out infinite; }
   .wave-2 { animation: kk-wave-2 2s ease-in-out infinite; animation-delay: 0.5s; }
@@ -327,7 +333,9 @@
   .kk-hints {
     margin-top: 40px;
     display: flex;
-    gap: 28px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px 28px;
     color: var(--text-muted);
     font-size: 12px;
     text-transform: uppercase;
@@ -660,3 +668,11 @@
 @keyframes kk-wave-1 { 0%,100% { d: path("M0,40 Q35,10 70,40 T140,40 T210,40 T280,40"); } 50% { d: path("M0,40 Q35,70 70,40 T140,40 T210,40 T280,40"); } }
 @keyframes kk-wave-2 { 0%,100% { d: path("M0,40 Q35,70 70,40 T140,40 T210,40 T280,40"); } 50% { d: path("M0,40 Q35,10 70,40 T140,40 T210,40 T280,40"); } }
 @keyframes kk-wave-3 { 0%,100% { d: path("M0,40 Q35,25 70,40 T140,40 T210,40 T280,40"); opacity: 0.3; } 50% { d: path("M0,40 Q35,55 70,40 T140,40 T210,40 T280,40"); opacity: 0.6; } }
+
+/* On narrow screens let the tool fill the width instead of staying at the 480px frame */
+@media (max-width: 559px) {
+  .karaoke-app {
+    max-width: 100%;
+    border-radius: 8px;
+  }
+}

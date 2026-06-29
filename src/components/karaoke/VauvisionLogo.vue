@@ -17,8 +17,8 @@ const src = computed(() => (theme.value === 'dark' ? logoWhite : logoBlack))
 </template>
 
 <style scoped>
-.kk-logo { display: inline-flex; align-items: center; }
-.kk-logo img { width: auto; object-fit: contain; }
+.kk-logo { display: inline-flex; align-items: center; max-width: 100%; }
+.kk-logo img { width: auto; max-width: 100%; object-fit: contain; }
 .kk-logo--sm img { height: 22px; }
 .kk-logo--md img { height: 30px; }
 .kk-logo--lg img { height: 46px; }
