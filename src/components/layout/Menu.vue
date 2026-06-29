@@ -71,6 +71,12 @@
           </RouterLink>
         </li>
         <li class="menu__item">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'karaoke' })">
+            <span><ArticlesSVG /></span>
+            <span>Караоке тайминг</span>
+          </RouterLink>
+        </li>
+        <li class="menu__item">
           <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'support' })">
             <span><FaqSVG /></span>
             <span>Связь с поддержкой</span>

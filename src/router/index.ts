@@ -98,6 +98,11 @@ const router = createRouter({
           name: "support",
           component: () => import("@/views/Support.vue"),
         },
+        {
+          path: "karaoke",
+          name: "karaoke",
+          component: () => import("@/views/Karaoke.vue"),
+        },
       ],
     },
   ],

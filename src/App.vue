@@ -17,4 +17,5 @@
   @import "@/styles/fonts.scss";
   @import "@/styles/main.scss";
   @import "@/styles/components.scss";
+  @import "@/styles/karaoke.scss";
 </style>
