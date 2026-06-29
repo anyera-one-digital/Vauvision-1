@@ -23,11 +23,11 @@ const canProceed = computed(
 )
 
 // Clean and format a lyric line.
-// Removes trailing special characters BUT keeps parentheses so ad-libs
-// like "(сон)" / "(BOMB)" stay intact at the end of a line.
+// Removes trailing special characters BUT keeps parentheses and ! ? so
+// ad-libs like "(сон)" / "(BOMB)" and exclamations/questions stay intact.
 function formatLyricLine(text: string): string {
   let cleaned = text.trim()
-  cleaned = cleaned.replace(/[^\p{L}\p{N})(]+$/gu, '')
+  cleaned = cleaned.replace(/[^\p{L}\p{N})(!?]+$/gu, '')
   if (cleaned.length > 0) {
     cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
   }
