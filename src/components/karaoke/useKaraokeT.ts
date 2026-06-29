@@ -1,22 +1,13 @@
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { karaokeTranslations, type KaraokeLang, type KaraokeTranslations } from './translations'
+import { karaokeTranslations, type KaraokeTranslations } from './translations'
+import { useKaraokeApp } from './useKaraokeApp'
 
 /**
- * Maps the cabinet's active vue-i18n locale onto the Karaoke tool's own
- * translation bundle. Falls back to Russian for any unsupported locale.
+ * Resolves the Karaoke translation bundle for the tool's current language
+ * (managed by useKaraokeApp + the in-tool settings panel).
  */
 export function useKaraokeT() {
-  const { locale } = useI18n()
-
-  const lang = computed<KaraokeLang>(() => {
-    const base = String(locale.value || 'ru').slice(0, 2).toLowerCase()
-    return (['ru', 'en', 'es'] as const).includes(base as KaraokeLang)
-      ? (base as KaraokeLang)
-      : 'ru'
-  })
-
-  const t = computed<KaraokeTranslations>(() => karaokeTranslations[lang.value])
-
-  return { t, lang }
+  const { language } = useKaraokeApp()
+  const t = computed<KaraokeTranslations>(() => karaokeTranslations[language.value])
+  return { t, lang: language }
 }

@@ -62,6 +62,13 @@ export interface KaraokeTranslations {
     download: string
     newProject: string
   }
+  settings: {
+    title: string
+    language: string
+    theme: string
+    light: string
+    dark: string
+  }
 }
 
 export const karaokeTranslations: Record<KaraokeLang, KaraokeTranslations> = {
@@ -133,6 +140,13 @@ export const karaokeTranslations: Record<KaraokeLang, KaraokeTranslations> = {
       download: 'Скачать',
       newProject: 'Новый проект',
     },
+    settings: {
+      title: 'Настройки',
+      language: 'Язык',
+      theme: 'Тема',
+      light: 'Светлая',
+      dark: 'Тёмная',
+    },
   },
 
   en: {
@@ -203,6 +217,13 @@ export const karaokeTranslations: Record<KaraokeLang, KaraokeTranslations> = {
       download: 'Download',
       newProject: 'New Project',
     },
+    settings: {
+      title: 'Settings',
+      language: 'Language',
+      theme: 'Theme',
+      light: 'Light',
+      dark: 'Dark',
+    },
   },
 
   es: {
@@ -272,6 +293,13 @@ export const karaokeTranslations: Record<KaraokeLang, KaraokeTranslations> = {
       timings: 'Tiempos (inicio → fin)',
       download: 'Descargar',
       newProject: 'Nuevo Proyecto',
+    },
+    settings: {
+      title: 'Ajustes',
+      language: 'Idioma',
+      theme: 'Tema',
+      light: 'Claro',
+      dark: 'Oscuro',
     },
   },
 }

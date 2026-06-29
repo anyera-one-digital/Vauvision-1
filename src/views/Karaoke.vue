@@ -8,7 +8,11 @@ import InfoStep from '@/components/karaoke/InfoStep.vue'
 import SyncStep from '@/components/karaoke/SyncStep.vue'
 import ExportStep from '@/components/karaoke/ExportStep.vue'
 import VauvisionLogo from '@/components/karaoke/VauvisionLogo.vue'
+import KaraokeSettings from '@/components/karaoke/KaraokeSettings.vue'
+import { useKaraokeApp } from '@/components/karaoke/useKaraokeApp'
 import type { KaraokeStep, LyricLine } from '@/components/karaoke/types'
+
+const { theme } = useKaraokeApp()
 
 const step = ref<KaraokeStep>('onboarding')
 
@@ -51,9 +55,13 @@ function resetProject() {
     <div class="container karaoke-page__container">
       <Menu />
       <div class="karaoke-page__block">
-        <div class="karaoke-app">
+        <div class="karaoke-app" :data-theme="theme">
           <header v-if="step !== 'onboarding'" class="kk-header">
-            <div class="kk-header__logo"><VauvisionLogo size="md" /></div>
+            <div class="kk-header__bar">
+              <span class="kk-header__spacer" />
+              <VauvisionLogo size="md" />
+              <KaraokeSettings />
+            </div>
             <div class="kk-steps">
               <div
                 v-for="(s, i) in steps"

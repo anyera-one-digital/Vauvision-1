@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import logo from '@/assets/img/karaoke/vauvision-logo.png'
+import { computed } from 'vue'
+import logoBlack from '@/assets/img/karaoke/vauvision-logo.png'
+import logoWhite from '@/assets/img/karaoke/vauvision-logo-white.png'
+import { useKaraokeApp } from './useKaraokeApp'
 
 withDefaults(defineProps<{ size?: 'sm' | 'md' | 'lg' }>(), { size: 'md' })
+
+const { theme } = useKaraokeApp()
+const src = computed(() => (theme.value === 'dark' ? logoWhite : logoBlack))
 </script>
 
 <template>
   <a class="kk-logo" :class="`kk-logo--${size}`" href="https://vauvision.com" target="_blank" rel="noopener noreferrer">
-    <img :src="logo" alt="VAUVISION" />
+    <img :src="src" alt="VAUVISION" />
   </a>
 </template>
 
