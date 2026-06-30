@@ -2963,6 +2963,10 @@ const promptUpcAndCreateSmartlink = async (
         confirmButtonText: 'Создать ссылку',
         cancelButtonText: 'Отмена',
         inputPlaceholder: 'UPC (от 12 до 255 цифр)',
+        // Скролл-контейнер кабинета — <html>, а Element Plus при lockScroll вешает
+        // overflow:hidden на <body>, из-за чего длинный список релизов прыгает наверх
+        // при открытии окна. Отключаем scroll-lock (как уже сделано в Setting.vue).
+        lockScroll: false,
         inputValidator: (val: string) => {
           const digits = (val || '').replace(/\D+/g, '');
           return /^[0-9]{12,255}$/.test(digits)
