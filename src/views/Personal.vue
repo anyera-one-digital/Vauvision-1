@@ -180,7 +180,7 @@
                           </svg>
                         </div>
 
-                        <!-- Пресейв/ссылка релиза: поле + «?» рядом (вне кликабельного чипа) -->
+                        <!-- Пресейв/ссылка релиза: «?» внутри чипа -->
                         <div class="personal__link_field">
                         <!-- Ссылка на релиз: клик открывает в новой вкладке, иконка — копирует -->
                         <a
@@ -190,7 +190,7 @@
                           rel="noopener noreferrer"
                           class="personal__releases_code text_small"
                         >
-                          <span>Пресейв и ссылка: {{ release.link }}</span>
+                          <span>Пресейв / Ссылка: {{ release.link }}</span>
                           <svg
                             width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
                             role="button"
@@ -199,6 +199,9 @@
                           >
                             <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
                           </svg>
+                          <el-tooltip popper-class="smartlink-help-popper" placement="top" effect="dark" raw-content :show-after="80" :content="smartlinkHelpHtml">
+                            <span class="personal__link_help" role="button" tabindex="0" @click.stop.prevent aria-label="Что это за пресейв и ссылка">?</span>
+                          </el-tooltip>
                         </a>
                         <!-- Только поддержка (без выбора типа) -->
                         <div
@@ -209,10 +212,10 @@
                           @click="openSupportPage()"
                           @keydown.enter.prevent="openSupportPage()"
                         >
-                          <span>Пресейв и ссылка: уточнить в поддержке</span>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                          </svg>
+                          <span>Пресейв / Ссылка: уточнить в поддержке</span>
+                          <el-tooltip popper-class="smartlink-help-popper" placement="top" effect="dark" raw-content :show-after="80" :content="smartlinkHelpHtml">
+                            <span class="personal__link_help" role="button" tabindex="0" @click.stop.prevent aria-label="Что это за пресейв и ссылка">?</span>
+                          </el-tooltip>
                         </div>
                         <!-- Создать ссылку: один умный смартлинк (до релиза — пресейв, после — площадки) -->
                         <div
@@ -224,16 +227,11 @@
                           @click="handleSmartlinkCommand(release, 'vauvision')"
                           @keydown.enter.prevent="handleSmartlinkCommand(release, 'vauvision')"
                         >
-                          <span>Пресейв и ссылка: создать</span>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                          </svg>
-                        </div>
-                          <!-- «?» рядом с полем (вне кликабельного чипа) -->
-                          <el-tooltip placement="top" effect="dark" :show-after="80">
-                            <template #content>Если релиз ещё не вышел — вы получаете пресейв.<br>Если вышел — получаете смартлинк (ссылки на площадки).</template>
-                            <span class="personal__link_help" role="button" tabindex="0" aria-label="Что это за пресейв и ссылка">?</span>
+                          <span>Пресейв / Ссылка: создать</span>
+                          <el-tooltip popper-class="smartlink-help-popper" placement="top" effect="dark" raw-content :show-after="80" :content="smartlinkHelpHtml">
+                            <span class="personal__link_help" role="button" tabindex="0" @click.stop.prevent aria-label="Что это за пресейв и ссылка">?</span>
                           </el-tooltip>
+                        </div>
                         </div>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
@@ -2910,6 +2908,12 @@ const getReleaseLinkPlaceholderLabel = (
 /** Идёт ли сейчас создание смартлинка для релиза (защита от повторных кликов). */
 const creatingSmartlinkIds = ref<Set<string | number>>(new Set());
 
+/** Текст подсказки «?» про пресейв/смартлинк (рендерится как HTML в тултипе). */
+const smartlinkHelpHtml =
+  'Если релиз ещё не вышел, то вам сформируется Пресейв. Это ссылка с возможностью предварительно сохранить ваш релиз ДО его выхода на площадки.<br><br>' +
+  'Если ваш релиз уже вышел, то вам сформируется Смартлинк. Это общая ссылка с основными сервисами, где доступен ваш релиз. Используется ПОСЛЕ выхода релиза на площадки.<br><br>' +
+  'Созданный Пресейв автоматически превратится в Смартлинк после выхода релиза.';
+
 /**
  * Вызывает создание смартлинка по UPC. UPC передаётся только если пользователь
  * ввёл его вручную (когда у релиза кода нет). Возвращает true при успехе.
@@ -2963,6 +2967,10 @@ const promptUpcAndCreateSmartlink = async (
         confirmButtonText: 'Создать ссылку',
         cancelButtonText: 'Отмена',
         inputPlaceholder: 'UPC (от 12 до 255 цифр)',
+        // Скролл-контейнер кабинета — <html>, а Element Plus при lockScroll вешает
+        // overflow:hidden на <body>, из-за чего длинный список релизов прыгает наверх
+        // при открытии окна. Отключаем scroll-lock (как уже сделано в Setting.vue).
+        lockScroll: false,
         inputValidator: (val: string) => {
           const digits = (val || '').replace(/\D+/g, '');
           return /^[0-9]{12,255}$/.test(digits)
@@ -3038,9 +3046,8 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
-/* Поле «Пресейв и ссылка» + значок «?» рядом (вне кликабельного чипа).
-   Обёртка занимает один слот сетки кодов (как обычный чип), внутри —
-   чип растягивается, «?» прижат справа. */
+/* Поле «Пресейв / Ссылка»: обёртка занимает один слот сетки кодов (как обычный
+   чип), внутри чип растягивается на всю ширину, «?» теперь внутри чипа. */
 .personal__link_field {
   display: inline-flex;
   align-items: center;
@@ -3055,6 +3062,12 @@ onUnmounted(() => {
     width: auto;
     flex: 1 1 auto;
     min-width: 0;
+  }
+
+  // Перебиваем `.personal__releases_code span { flex: 1 }`, иначе «?» внутри
+  // чипа растягивается в овал и съедает место под текст.
+  .personal__link_help {
+    flex: 0 0 18px;
   }
 }
 
@@ -3071,7 +3084,7 @@ onUnmounted(() => {
   line-height: 1;
   font-weight: 700;
   cursor: help;
-  color: var(--text-gray, #888);
+  color: currentColor;
   opacity: 0.7;
   transition: opacity 0.15s ease, color 0.15s ease;
 
@@ -3712,7 +3725,10 @@ onUnmounted(() => {
     &:has(.personal__releases_code:only-child) {
       justify-content: flex-start;
 
-      .personal__releases_code {
+      // Только ПРЯМЫЕ чипы-коды. Чип-ссылка лежит внутри .personal__link_field
+      // (т.е. :only-child своего поля) и ложно триггерил это правило — из-за
+      // flex:0 0 auto он не сжимался, выезжал из колонки и тащил «?» на кнопки.
+      > .personal__releases_code {
         flex: 0 0 auto;
         min-width: 200px;
       }
@@ -4936,5 +4952,12 @@ onUnmounted(() => {
   &__months {
     opacity: 0.8;
   }
+}
+</style>
+
+<!-- Тултип «?» телепортируется в body — стиль ширины должен быть НЕ scoped -->
+<style lang="scss">
+.smartlink-help-popper.el-popper {
+  max-width: 320px;
 }
 </style>
