@@ -3725,7 +3725,10 @@ onUnmounted(() => {
     &:has(.personal__releases_code:only-child) {
       justify-content: flex-start;
 
-      .personal__releases_code {
+      // Только ПРЯМЫЕ чипы-коды. Чип-ссылка лежит внутри .personal__link_field
+      // (т.е. :only-child своего поля) и ложно триггерил это правило — из-за
+      // flex:0 0 auto он не сжимался, выезжал из колонки и тащил «?» на кнопки.
+      > .personal__releases_code {
         flex: 0 0 auto;
         min-width: 200px;
       }
