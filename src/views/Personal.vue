@@ -222,10 +222,25 @@
                           @click="handleSmartlinkCommand(release, 'vauvision')"
                           @keydown.enter.prevent="handleSmartlinkCommand(release, 'vauvision')"
                         >
-                          <span>Ссылка: создать ссылку</span>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                          </svg>
+                          <span>Пресейв / Ссылка</span>
+                          <el-tooltip placement="top" effect="dark" :show-after="100">
+                            <template #content>
+                              Если релиз ещё не вышел — сформируется Пресейв.<br />
+                              Это ссылка с возможностью предварительно сохранить релиз ДО его выхода на площадки.<br /><br />
+                              Если релиз уже вышел — сформируется Смартлинк.<br />
+                              Это общая ссылка на сервисы, где доступен релиз (используется ПОСЛЕ выхода).<br /><br />
+                              Пресейв автоматически превратится в Смартлинк после выхода релиза.
+                            </template>
+                            <span
+                              class="release-link-help"
+                              role="button"
+                              tabindex="0"
+                              aria-label="Подсказка"
+                              style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;border:1px solid currentColor;font-size:11px;line-height:1;margin-left:6px;cursor:help;flex:none;"
+                              @click.stop
+                              @keydown.enter.stop
+                            >?</span>
+                          </el-tooltip>
                         </div>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
@@ -672,16 +687,14 @@
       </div>
       <div class="popup__body">
         <div class="popup__empty">
-          <p>На данный момент нет доступных отчётов</p>
+          <p>На данный момент нет доступных отчётов.</p>
           <p class="popup__empty_hint">Отчёты приходят раз в квартал после 25 числа:</p>
-          <p class="popup__empty_hint">
-            <ul class="popup__empty_list">
-              <li> В мае приходит отчёт за Q1 (первый квартал: дек-янв-фев)</li>
-              <li> В августе приходит отчёт за Q2 (второй квартал: мар-апр-май)</li>
-              <li> В ноябре приходит отчёт за Q3 (третий квартал: июн-июл-авг)</li>
-              <li> В феврале приходит отчёт за Q4 (четвёртый квартал: сен-окт-ноя)</li>
-            </ul> 
-          </p>
+          <ul class="popup__empty_list">
+            <li>1) В мае приходит отчёт за Q1 (первый квартал: дек-янв-фев)</li>
+            <li>2) В августе приходит отчёт за Q2 (второй квартал: мар-апр-май)</li>
+            <li>3) В ноябре приходит отчёт за Q3 (третий квартал: июн-июл-авг)</li>
+            <li>4) В феврале приходит отчёт за Q4 (четвёртый квартал: сен-окт-ноя)</li>
+          </ul>
           <p class="popup__empty_hint">Пожалуйста, попробуйте позже или обратитесь в нашу поддержку.</p>
         </div>
         <div class="popup__actions">
