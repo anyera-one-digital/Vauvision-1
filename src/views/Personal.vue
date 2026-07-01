@@ -1931,12 +1931,22 @@ const selectYear = async (year: string) => {
       showReportPopup.value = false;
       showQuarterPopup.value = true;
     } else {
-      alert('Для выбранного года нет доступных кварталов');
+      ElMessage({
+        message: 'Ваш отчёт ещё не готов',
+        type: 'info',
+        duration: 3000,
+        showClose: true
+      });
     }
-    
+
   } catch (error) {
     console.error('Ошибка при загрузке кварталов:', error);
-    alert('Не удалось загрузить список кварталов');
+    ElMessage({
+      message: 'Ваш отчёт ещё не готов',
+      type: 'info',
+      duration: 3000,
+      showClose: true
+    });
     availableQuarters.value = [];
   } finally {
     isLoadingQuarters.value = false;
