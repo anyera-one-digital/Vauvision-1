@@ -180,6 +180,8 @@
                           </svg>
                         </div>
 
+                        <!-- Пресейв/ссылка релиза: «?» внутри чипа -->
+                        <div class="personal__link_field">
                         <!-- Ссылка на релиз: клик открывает в новой вкладке, иконка — копирует -->
                         <a
                           v-if="release.link && release.link !== 'Нет данных'"
@@ -188,7 +190,7 @@
                           rel="noopener noreferrer"
                           class="personal__releases_code text_small"
                         >
-                          <span>Ссылка: {{ release.link }}</span>
+                          <span>Пресейв / Ссылка: {{ release.link }}</span>
                           <svg
                             width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
                             role="button"
@@ -197,6 +199,9 @@
                           >
                             <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
                           </svg>
+                          <el-tooltip popper-class="smartlink-help-popper" placement="top" effect="dark" raw-content :show-after="80" :content="smartlinkHelpHtml">
+                            <span class="personal__link_help" role="button" tabindex="0" @click.stop.prevent aria-label="Что это за пресейв и ссылка">?</span>
+                          </el-tooltip>
                         </a>
                         <!-- Только поддержка (без выбора типа) -->
                         <div
@@ -207,10 +212,10 @@
                           @click="openSupportPage()"
                           @keydown.enter.prevent="openSupportPage()"
                         >
-                          <span>Ссылка: уточнить в поддержке</span>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                          </svg>
+                          <span>Пресейв / Ссылка: уточнить в поддержке</span>
+                          <el-tooltip popper-class="smartlink-help-popper" placement="top" effect="dark" raw-content :show-after="80" :content="smartlinkHelpHtml">
+                            <span class="personal__link_help" role="button" tabindex="0" @click.stop.prevent aria-label="Что это за пресейв и ссылка">?</span>
+                          </el-tooltip>
                         </div>
                         <!-- Создать ссылку: один умный смартлинк (до релиза — пресейв, после — площадки) -->
                         <div
@@ -222,10 +227,11 @@
                           @click="handleSmartlinkCommand(release, 'vauvision')"
                           @keydown.enter.prevent="handleSmartlinkCommand(release, 'vauvision')"
                         >
-                          <span>Ссылка: создать ссылку</span>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                          </svg>
+                          <span>Пресейв / Ссылка: создать</span>
+                          <el-tooltip popper-class="smartlink-help-popper" placement="top" effect="dark" raw-content :show-after="80" :content="smartlinkHelpHtml">
+                            <span class="personal__link_help" role="button" tabindex="0" @click.stop.prevent aria-label="Что это за пресейв и ссылка">?</span>
+                          </el-tooltip>
+                        </div>
                         </div>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
@@ -1925,12 +1931,22 @@ const selectYear = async (year: string) => {
       showReportPopup.value = false;
       showQuarterPopup.value = true;
     } else {
-      alert('Для выбранного года нет доступных кварталов');
+      ElMessage({
+        message: 'Ваш отчёт ещё не готов',
+        type: 'info',
+        duration: 3000,
+        showClose: true
+      });
     }
-    
+
   } catch (error) {
     console.error('Ошибка при загрузке кварталов:', error);
-    alert('Не удалось загрузить список кварталов');
+    ElMessage({
+      message: 'Ваш отчёт ещё не готов',
+      type: 'info',
+      duration: 3000,
+      showClose: true
+    });
     availableQuarters.value = [];
   } finally {
     isLoadingQuarters.value = false;
@@ -2902,6 +2918,12 @@ const getReleaseLinkPlaceholderLabel = (
 /** Идёт ли сейчас создание смартлинка для релиза (защита от повторных кликов). */
 const creatingSmartlinkIds = ref<Set<string | number>>(new Set());
 
+/** Текст подсказки «?» про пресейв/смартлинк (рендерится как HTML в тултипе). */
+const smartlinkHelpHtml =
+  'Если релиз ещё не вышел, то вам сформируется Пресейв. Это ссылка с возможностью предварительно сохранить ваш релиз ДО его выхода на площадки.<br><br>' +
+  'Если ваш релиз уже вышел, то вам сформируется Смартлинк. Это общая ссылка с основными сервисами, где доступен ваш релиз. Используется ПОСЛЕ выхода релиза на площадки.<br><br>' +
+  'Созданный Пресейв автоматически превратится в Смартлинк после выхода релиза.';
+
 /**
  * Вызывает создание смартлинка по UPC. UPC передаётся только если пользователь
  * ввёл его вручную (когда у релиза кода нет). Возвращает true при успехе.
@@ -2955,6 +2977,10 @@ const promptUpcAndCreateSmartlink = async (
         confirmButtonText: 'Создать ссылку',
         cancelButtonText: 'Отмена',
         inputPlaceholder: 'UPC (от 12 до 255 цифр)',
+        // Скролл-контейнер кабинета — <html>, а Element Plus при lockScroll вешает
+        // overflow:hidden на <body>, из-за чего длинный список релизов прыгает наверх
+        // при открытии окна. Отключаем scroll-lock (как уже сделано в Setting.vue).
+        lockScroll: false,
         inputValidator: (val: string) => {
           const digits = (val || '').replace(/\D+/g, '');
           return /^[0-9]{12,255}$/.test(digits)
@@ -3030,6 +3056,51 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
+/* Поле «Пресейв / Ссылка»: обёртка занимает один слот сетки кодов (как обычный
+   чип), внутри чип растягивается на всю ширину, «?» теперь внутри чипа. */
+.personal__link_field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(50% - 5px);
+  min-width: 140px;
+
+  @media (max-width: 1919px) { width: calc(50% - 7px); }
+  @media (max-width: 480px)  { width: 100%; max-width: 100%; }
+
+  .personal__releases_code {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  // Перебиваем `.personal__releases_code span { flex: 1 }`, иначе «?» внутри
+  // чипа растягивается в овал и съедает место под текст.
+  .personal__link_help {
+    flex: 0 0 18px;
+  }
+}
+
+.personal__link_help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  cursor: help;
+  color: currentColor;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, color 0.15s ease;
+
+  &:hover { opacity: 1; }
+}
+
 .loading__container {
   display: flex;
   flex-direction: column;
@@ -3664,7 +3735,10 @@ onUnmounted(() => {
     &:has(.personal__releases_code:only-child) {
       justify-content: flex-start;
 
-      .personal__releases_code {
+      // Только ПРЯМЫЕ чипы-коды. Чип-ссылка лежит внутри .personal__link_field
+      // (т.е. :only-child своего поля) и ложно триггерил это правило — из-за
+      // flex:0 0 auto он не сжимался, выезжал из колонки и тащил «?» на кнопки.
+      > .personal__releases_code {
         flex: 0 0 auto;
         min-width: 200px;
       }
@@ -4888,5 +4962,12 @@ onUnmounted(() => {
   &__months {
     opacity: 0.8;
   }
+}
+</style>
+
+<!-- Тултип «?» телепортируется в body — стиль ширины должен быть НЕ scoped -->
+<style lang="scss">
+.smartlink-help-popper.el-popper {
+  max-width: 320px;
 }
 </style>
