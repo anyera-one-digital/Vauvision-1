@@ -222,10 +222,25 @@
                           @click="handleSmartlinkCommand(release, 'vauvision')"
                           @keydown.enter.prevent="handleSmartlinkCommand(release, 'vauvision')"
                         >
-                          <span>Ссылка: создать ссылку</span>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                          </svg>
+                          <span>Пресейв / Ссылка</span>
+                          <el-tooltip placement="top" effect="dark" :show-after="100">
+                            <template #content>
+                              Если релиз ещё не вышел — сформируется Пресейв.<br />
+                              Это ссылка с возможностью предварительно сохранить релиз ДО его выхода на площадки.<br /><br />
+                              Если релиз уже вышел — сформируется Смартлинк.<br />
+                              Это общая ссылка на сервисы, где доступен релиз (используется ПОСЛЕ выхода).<br /><br />
+                              Пресейв автоматически превратится в Смартлинк после выхода релиза.
+                            </template>
+                            <span
+                              class="release-link-help"
+                              role="button"
+                              tabindex="0"
+                              aria-label="Подсказка"
+                              style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;border:1px solid currentColor;font-size:11px;line-height:1;margin-left:6px;cursor:help;flex:none;"
+                              @click.stop
+                              @keydown.enter.stop
+                            >?</span>
+                          </el-tooltip>
                         </div>
                         <!-- ISRC код для релиза (если нет треков) -->
                         <RouterLink 
