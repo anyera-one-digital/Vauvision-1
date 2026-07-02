@@ -141,6 +141,14 @@ textarea,
 .el-message-box__message p {
   text-align: center;
 }
+/* Заголовок диалога — жирным */
+.el-message-box__title {
+  font-weight: 700;
+}
+/* Кнопки диалога с center: true — по центру таблички */
+.el-message-box--center .el-message-box__btns {
+  justify-content: center;
+}
 
 .ProseMirror {
   min-height: 80px;

@@ -3212,7 +3212,7 @@ const confirmDeleteSmartlink = async (release: Release): Promise<void> => {
       {
         confirmButtonText: 'Да',
         cancelButtonText: 'Нет',
-        type: 'warning',
+        center: true,
         lockScroll: false,
       }
     );
