@@ -180,8 +180,11 @@
                       </button>
                       <p class="personal__releases_album text_small"></p>
                     </div>
+                    <!-- Сворачиваемая часть: плавная анимация высоты (grid-rows 0fr→1fr + fade) -->
+                    <div class="personal__releases_collapsible" :class="{ 'is-open': isReleaseExpanded(release.id) }">
+                      <div class="personal__releases_collapsible_inner">
                     <!-- Блок с кодами и ссылкой -->
-                    <div class="personal__releases_codes" v-show="isReleaseExpanded(release.id)">
+                    <div class="personal__releases_codes">
                         <!-- UPC код -->
                         <div 
                           v-if="release.upcCode && release.upcCode !== 'Нет данных'" 
@@ -306,7 +309,7 @@
                     </div>
 
                     <!-- Блок с треками релиза -->
-                    <div class="personal__releases_tracks" v-if="release.tracks && release.tracks.length > 0" v-show="isReleaseExpanded(release.id)">
+                    <div class="personal__releases_tracks" v-if="release.tracks && release.tracks.length > 0">
                       <h6 class="personal__tracks_title">Треки:</h6>
                       <ul class="personal__tracks_list">
                         <li 
@@ -346,7 +349,7 @@
                       </ul>
                     </div>
                     
-                    <div class="personal__releases_bottom" v-show="isReleaseExpanded(release.id)">
+                    <div class="personal__releases_bottom">
                       <p class="personal__releases_date text_small">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
                       <div class="personal__releases_agreements">
                         <a 
@@ -367,21 +370,27 @@
                         </a -->
                       </div>
                     </div>
+                      </div>
+                    </div>
                   </div>
-                  <div class="personal__releases_services" v-show="isReleaseExpanded(release.id)">
-                    <a
-                      class="personal__releases_service_button"
-                      href="https://vauvision.com/stories/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <span>Видео для сториз</span>
-                    </a>
-                    <div
-                      class="personal__releases_service_button"
-                      @click="handleReleaseServiceComingSoon"
-                    >
-                      <span>Запуск рекламы</span>
+                  <div class="personal__releases_services">
+                    <div class="personal__releases_collapsible personal__releases_collapsible--services" :class="{ 'is-open': isReleaseExpanded(release.id) }">
+                      <div class="personal__releases_collapsible_inner personal__releases_services_inner">
+                        <a
+                          class="personal__releases_service_button"
+                          href="https://vauvision.com/stories/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <span>Видео для сториз</span>
+                        </a>
+                        <div
+                          class="personal__releases_service_button"
+                          @click="handleReleaseServiceComingSoon"
+                        >
+                          <span>Запуск рекламы</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </li>
@@ -4287,6 +4296,49 @@ onUnmounted(() => {
     }
   }
 
+  // Плавное дорогое раскрытие/сворачивание карточки релиза.
+  // grid-template-rows 0fr→1fr анимирует высоту до auto без фикс. max-height.
+  &_collapsible {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition:
+      grid-template-rows 0.52s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &:not(.is-open) {
+      grid-template-rows: 0fr;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    // лёгкий сдвиг контента для «дорогого» ощущения раскрытия
+    &_inner {
+      transition: transform 0.52s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    &:not(.is-open) &_inner {
+      transform: translateY(-8px);
+    }
+  }
+
+  &_collapsible_inner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  // Раскладку кнопок сервисов переносим в _inner (grid-rows корректно сворачивает).
+  &_services_inner {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding-top: 52px;
+
+    @media (max-width: 1023px) {
+      padding-top: 0;
+    }
+  }
+
   &_codes {
     display: flex;
     flex: 1;
@@ -4434,22 +4486,15 @@ onUnmounted(() => {
   &_services{
     width: 220px;
     min-width: 220px;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    margin-top: 52px;
 
     @media (max-width: 1023px) {
       width: 100%;
       min-width: 0;
       max-width: 100%;
-      margin-top: 0;
     }
 
     @media (max-width: 767px) {
       max-width: 100%;
-      margin-top: 0;
     }
   }
 
