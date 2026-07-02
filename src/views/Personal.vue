@@ -1424,10 +1424,10 @@ const userName = ref<string>('');
 /** ID текущего пользователя (из getData) — для фича-гейта редактора смартлинков. */
 const currentUserId = ref<number>(0);
 /** Фича-гейт кастомизации смартлинка (на время теста — только эти аккаунты). */
+// Редактор смартлинка открыт всем авторизованным (02.07.2026). Правки только своих
+// релизов гарантирует userOwnsRelease на бэке. Список оставлен на случай отката.
 const SMARTLINK_EDITOR_USER_IDS = [11401, 22168, 50];
-const canCustomizeSmartlink = computed(() =>
-  SMARTLINK_EDITOR_USER_IDS.includes(currentUserId.value)
-);
+const canCustomizeSmartlink = computed(() => currentUserId.value > 0);
 
 /** Заголовок ЛК: псевдоним из ростера лейбла / логин getData, иначе имя как раньше */
 const personalHeadDisplayName = computed(() => {
