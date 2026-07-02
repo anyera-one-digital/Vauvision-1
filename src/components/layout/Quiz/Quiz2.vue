@@ -218,7 +218,7 @@
             
             <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
             <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
-              <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
+              <label class="form__label button">Ссылка на договор<!-- <span>*</span> --></label>
               <el-input
                 v-model="track.rightsContractLink"
                 type="text"
@@ -462,7 +462,7 @@
                   
                   <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
                   <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
-                    <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
+                    <label class="form__label button">Ссылка на договор<!-- <span>*</span> --></label>
                     <el-input
                       v-model="track.rightsContractLink"
                       type="text"
@@ -1153,26 +1153,27 @@ const loadSinglesFromStorage = async (savedState: any) => {
         }
       }
       
-      if (audioFile) {
-        const row: SingleTrack = {
-          id: track.id,
-          performerName: track.performerName || '',
-          musicAuthor: track.musicAuthor || '',
-          textAuthor: track.textAuthor || '',
-          trackName: track.trackName || '',
-          audioFile: audioFile,
-          audioFileName: track.audioFileName || '',
-          audioFileSize: track.audioFileSize || 0,
-          audioFileId: track.audioFileId || null,
-          uploaded: true,
-          hasAudioUploaded: true,
-          rightsType: track.rightsType || '',
-          rightsContractLink: track.rightsContractLink || '',
-          additionalInfo: track.additionalInfo || ''
-        };
-        if (track.product_id) row.product_id = track.product_id;
-        loadedTracks.push(row);
-      }
+      // Строку сохраняем даже без бинарника (восстановление серверного черновика):
+      // тексты остаются, файл просто нужно приложить заново — валидация шага это потребует.
+      const hasAudio = !!audioFile;
+      const row: SingleTrack = {
+        id: track.id,
+        performerName: track.performerName || '',
+        musicAuthor: track.musicAuthor || '',
+        textAuthor: track.textAuthor || '',
+        trackName: track.trackName || '',
+        audioFile: audioFile,
+        audioFileName: hasAudio ? (track.audioFileName || '') : '',
+        audioFileSize: hasAudio ? (track.audioFileSize || 0) : 0,
+        audioFileId: hasAudio ? (track.audioFileId || null) : null,
+        uploaded: hasAudio,
+        hasAudioUploaded: hasAudio,
+        rightsType: track.rightsType || '',
+        rightsContractLink: track.rightsContractLink || '',
+        additionalInfo: track.additionalInfo || ''
+      };
+      if (track.product_id) row.product_id = track.product_id;
+      loadedTracks.push(row);
     }
     singleTracks.value = loadedTracks;
     
@@ -1240,10 +1241,10 @@ const loadAlbumsFromStorage = async (savedState: any, requiredCount: number) => 
                 musicAuthor: track.musicAuthor || album.musicAuthor || '',
                 textAuthor: track.textAuthor || album.textAuthor || '',
                 audioFile: audioFile,
-                audioFileName: track.audioFileName || '',
-                audioFileSize: track.audioFileSize || 0,
-                audioFileId: track.audioFileId || null,
-                uploaded: track.uploaded || false,
+                audioFileName: audioFile ? (track.audioFileName || '') : '',
+                audioFileSize: audioFile ? (track.audioFileSize || 0) : 0,
+                audioFileId: audioFile ? (track.audioFileId || null) : null,
+                uploaded: audioFile ? (track.uploaded || false) : false,
                 rightsType: track.rightsType || '',
                 rightsContractLink: track.rightsContractLink || '',
                 additionalInfo: track.additionalInfo || ''
@@ -1405,8 +1406,9 @@ const isReadyForNextStep = computed(() => {
         !singleErrors.value[index]?.textAuthor &&
         track.rightsType &&
         !singleErrors.value[index]?.rightsType &&
-        (!needsRightsContractLink(track.rightsType) ||
-         (track.rightsContractLink?.trim() && !singleErrors.value[index]?.rightsContractLink));
+        // Ссылка на договор НЕ обязательна (по просьбе клиента): пускаем без неё,
+        // блокируем только если ссылка введена и в неверном формате.
+        !singleErrors.value[index]?.rightsContractLink;
     }));
 
   const allAlbumsComplete = albumCountFromQuiz1.value === 0 || 
@@ -1430,10 +1432,10 @@ const isReadyForNextStep = computed(() => {
           isValidFullTrackTitleFormat(track.trackName) &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.trackName;
         
+        // Ссылка на договор НЕ обязательна: пускаем без неё, блокируем только при неверном формате.
         const isRightsValid = track.rightsType &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsType &&
-          (!needsRightsContractLink(track.rightsType) ||
-           (track.rightsContractLink?.trim() && !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsContractLink));
+          !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsContractLink;
         
         return isTrackNameValid && isPerformerValid && isMusicAuthorValid && 
                isTextAuthorValid && isRightsValid;
