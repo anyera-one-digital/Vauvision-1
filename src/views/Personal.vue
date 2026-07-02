@@ -161,6 +161,7 @@
                         <p class="personal__releases_album text_small"></p>
                       </div>
                       <p class="personal__releases_date text_small" v-show="isReleaseExpanded(release.id)">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
+                      <p class="personal__releases_status text_small" v-show="isReleaseExpanded(release.id)" v-if="release.releaseStatusLabel">Статус: <span class="release-status" :class="'release-status--' + (release.releaseStatus || 'moderation')">{{ release.releaseStatusLabel }}</span></p>
                     </div>
                   </div>
                   <div class="personal__releases_info">
@@ -351,6 +352,7 @@
                     
                     <div class="personal__releases_bottom">
                       <p class="personal__releases_date text_small">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
+                      <p class="personal__releases_status text_small" v-if="release.releaseStatusLabel">Статус: <span class="release-status" :class="'release-status--' + (release.releaseStatus || 'moderation')">{{ release.releaseStatusLabel }}</span></p>
                       <div class="personal__releases_agreements">
                         <a 
                           v-if="release.contractFile" 
@@ -1309,6 +1311,9 @@ interface Release {
   hasPng?: boolean;
   previewText?: string | null;
   propertyDateRelizValue?: string;
+  /** Статус релиза по данным Звонко: moderation | moderated | on_platforms | ask_support */
+  releaseStatus?: string;
+  releaseStatusLabel?: string;
   propertyDopValue?: string | null;
   propertyNewDocxValue?: string;
   propertyDogovorUserValue?: string | null;
@@ -2002,6 +2007,8 @@ const fetchReleasesPage = async (page: number) => {
         previewText: item.PREVIEW_TEXT,
         releaseType: normalizeReleaseType(item.RELEASE_TYPE),
         propertyDateRelizValue: item.PROPERTY_DATE_RELIZ_VALUE,
+        releaseStatus: item.RELEASE_STATUS,
+        releaseStatusLabel: item.RELEASE_STATUS_LABEL,
         propertyDopValue: item.PROPERTY_DOP_VALUE,
         propertyNewDocxValue: item.PROPERTY_NEW_DOCX_VALUE,
         propertyDogovorUserValue: item.PROPERTY_DOGOVOR_USER_VALUE,
@@ -2455,6 +2462,8 @@ const fetchReleases = async () => {
         previewText: item.PREVIEW_TEXT,
         releaseType: normalizeReleaseType(item.RELEASE_TYPE),
         propertyDateRelizValue: item.PROPERTY_DATE_RELIZ_VALUE,
+        releaseStatus: item.RELEASE_STATUS,
+        releaseStatusLabel: item.RELEASE_STATUS_LABEL,
         propertyDopValue: item.PROPERTY_DOP_VALUE,
         propertyNewDocxValue: item.PROPERTY_NEW_DOCX_VALUE,
         propertyDogovorUserValue: item.PROPERTY_DOGOVOR_USER_VALUE,
@@ -5906,6 +5915,31 @@ onUnmounted(() => {
 
   &:hover {
     color: #131313;
+  }
+}
+
+/* Статус релиза (по данным Звонко) — задача #14 */
+.personal__releases_status {
+  margin-top: 4px;
+
+  .release-status {
+    font-weight: 600;
+  }
+
+  .release-status--moderation {
+    color: #8a6d00;
+  }
+
+  .release-status--moderated {
+    color: #131313;
+  }
+
+  .release-status--on_platforms {
+    color: #1b7a2f;
+  }
+
+  .release-status--ask_support {
+    color: #ab1115;
   }
 }
 </style>
