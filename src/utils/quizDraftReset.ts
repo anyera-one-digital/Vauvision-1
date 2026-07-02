@@ -1,6 +1,7 @@
 import { openDB } from "@/utils/inMemoryIdb";
 import { SESSION_STORAGE_KEYS_PRESERVE_ON_QUIZ_RESET } from "@/composables/labelArtistsMenu";
 import { useQuizSessionStore } from "@/composables/quizSessionStore";
+import { disableServerDraftSaving } from "@/utils/quizServerDraft";
 
 export const QUIZ_ORDER_COMPLETED_SESSION_KEY = "quiz_order_completed";
 
@@ -116,6 +117,8 @@ export const resetQuizDraft = async (
 };
 
 export const markQuizOrderCompleted = (): void => {
+  // Заказ создан: сервер удалил черновик (order.php) — глушим автосейв, чтобы не воскресить его
+  disableServerDraftSaving();
   try {
     sessionStorage.setItem(QUIZ_ORDER_COMPLETED_SESSION_KEY, "1");
   } catch {

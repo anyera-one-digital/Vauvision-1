@@ -1153,26 +1153,27 @@ const loadSinglesFromStorage = async (savedState: any) => {
         }
       }
       
-      if (audioFile) {
-        const row: SingleTrack = {
-          id: track.id,
-          performerName: track.performerName || '',
-          musicAuthor: track.musicAuthor || '',
-          textAuthor: track.textAuthor || '',
-          trackName: track.trackName || '',
-          audioFile: audioFile,
-          audioFileName: track.audioFileName || '',
-          audioFileSize: track.audioFileSize || 0,
-          audioFileId: track.audioFileId || null,
-          uploaded: true,
-          hasAudioUploaded: true,
-          rightsType: track.rightsType || '',
-          rightsContractLink: track.rightsContractLink || '',
-          additionalInfo: track.additionalInfo || ''
-        };
-        if (track.product_id) row.product_id = track.product_id;
-        loadedTracks.push(row);
-      }
+      // Строку сохраняем даже без бинарника (восстановление серверного черновика):
+      // тексты остаются, файл просто нужно приложить заново — валидация шага это потребует.
+      const hasAudio = !!audioFile;
+      const row: SingleTrack = {
+        id: track.id,
+        performerName: track.performerName || '',
+        musicAuthor: track.musicAuthor || '',
+        textAuthor: track.textAuthor || '',
+        trackName: track.trackName || '',
+        audioFile: audioFile,
+        audioFileName: hasAudio ? (track.audioFileName || '') : '',
+        audioFileSize: hasAudio ? (track.audioFileSize || 0) : 0,
+        audioFileId: hasAudio ? (track.audioFileId || null) : null,
+        uploaded: hasAudio,
+        hasAudioUploaded: hasAudio,
+        rightsType: track.rightsType || '',
+        rightsContractLink: track.rightsContractLink || '',
+        additionalInfo: track.additionalInfo || ''
+      };
+      if (track.product_id) row.product_id = track.product_id;
+      loadedTracks.push(row);
     }
     singleTracks.value = loadedTracks;
     
@@ -1240,10 +1241,10 @@ const loadAlbumsFromStorage = async (savedState: any, requiredCount: number) => 
                 musicAuthor: track.musicAuthor || album.musicAuthor || '',
                 textAuthor: track.textAuthor || album.textAuthor || '',
                 audioFile: audioFile,
-                audioFileName: track.audioFileName || '',
-                audioFileSize: track.audioFileSize || 0,
-                audioFileId: track.audioFileId || null,
-                uploaded: track.uploaded || false,
+                audioFileName: audioFile ? (track.audioFileName || '') : '',
+                audioFileSize: audioFile ? (track.audioFileSize || 0) : 0,
+                audioFileId: audioFile ? (track.audioFileId || null) : null,
+                uploaded: audioFile ? (track.uploaded || false) : false,
                 rightsType: track.rightsType || '',
                 rightsContractLink: track.rightsContractLink || '',
                 additionalInfo: track.additionalInfo || ''
