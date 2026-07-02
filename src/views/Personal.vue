@@ -4302,9 +4302,12 @@ onUnmounted(() => {
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
+    // изолируем пересчёт раскладки/отрисовки этой карточкой — меньше работы браузеру за кадр
+    contain: layout paint;
+    will-change: grid-template-rows;
     transition:
-      grid-template-rows 0.52s cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+      grid-template-rows 0.48s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 
     &:not(.is-open) {
       grid-template-rows: 0fr;
@@ -4312,9 +4315,10 @@ onUnmounted(() => {
       pointer-events: none;
     }
 
-    // лёгкий сдвиг контента для «дорогого» ощущения раскрытия
+    // лёгкий сдвиг контента для «дорогого» ощущения раскрытия (transform — на GPU)
     &_inner {
-      transition: transform 0.52s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+      will-change: transform;
     }
     &:not(.is-open) &_inner {
       transform: translateY(-8px);
