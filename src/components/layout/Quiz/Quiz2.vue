@@ -218,7 +218,7 @@
             
             <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
             <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
-              <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
+              <label class="form__label button">Ссылка на договор<!-- <span>*</span> --></label>
               <el-input
                 v-model="track.rightsContractLink"
                 type="text"
@@ -462,7 +462,7 @@
                   
                   <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
                   <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
-                    <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
+                    <label class="form__label button">Ссылка на договор<!-- <span>*</span> --></label>
                     <el-input
                       v-model="track.rightsContractLink"
                       type="text"
