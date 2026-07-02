@@ -41,8 +41,8 @@
             <div v-if="serverDraft" class="quiz__draft_banner">
               <p class="quiz__draft_title">У вас есть незавершённый черновик релиза</p>
               <p class="quiz__draft_desc">
-                Сохранён {{ formatDraftAge(serverDraft.updatedAt) }}. Заполненные поля восстановятся,
-                аудиофайлы и обложку нужно будет приложить заново.
+                Сохранён {{ formatDraftAge(serverDraft.updatedAt) }}. Заполненные поля и
+                загруженные файлы восстановятся — продолжите с того места, где остановились.
               </p>
             </div>
             <div class="quiz__preview_buttons">
@@ -80,6 +80,12 @@ import QuizForm from "@/components/layout/QuizForm.vue";
 import { useQuizSessionStore } from "@/composables/quizSessionStore";
 import { resetQuizDraft } from "@/utils/quizDraftReset";
 import { openDB } from "@/utils/inMemoryIdb";
+import { ElMessage } from "element-plus";
+import {
+  restoreDraftFiles,
+  collectDraftFileRefs,
+  setDraftFileSyncEnabled,
+} from "@/utils/quizDraftFiles";
 import {
   loadServerDraft,
   deleteServerDraft,
@@ -209,9 +215,8 @@ const startOver = async () => {
   await showQuizForm();
 };
 
-// «Продолжить черновик»: вливаем сохранённое состояние шагов и открываем форму.
-// Файлы (аудио/обложка) в черновик не входят — возвращаем пользователя на шаг 2,
-// дальше он проходит шаги последовательно с уже заполненными полями.
+// «Продолжить черновик»: вливаем сохранённое состояние шагов, скачиваем файлы
+// (аудио/обложка — см. quizDraftFiles) и возвращаем пользователя на сохранённый шаг.
 const restoreDraftAndStart = async () => {
   const draft = serverDraft.value;
   if (!draft || isRestoringDraft.value) return;
@@ -236,9 +241,35 @@ const restoreDraftAndStart = async () => {
       await db.put('quizState', { ...(value as object), id: (value as any).id ?? key });
     }
 
-    const resumeStep = Math.min(draft.maxReachableStep || 1, 2);
+    // Бинарники (аудио/обложка/доп.файлы) приходят из серверного черновика.
+    // Фоновую заливку на время восстановления глушим: файлы и так с сервера.
+    setDraftFileSyncEnabled(false);
+    let restoredIds = new Set<string>();
+    try {
+      restoredIds = await restoreDraftFiles((store, entry) =>
+        quizSessionStore.putBinary(store, entry),
+      );
+    } finally {
+      setDraftFileSyncEnabled(true);
+    }
+
+    // Все файлы, на которые ссылается черновик, восстановлены → возвращаем на сохранённый шаг.
+    // Иначе (заливка не успела/сеть) — на шаг 2: пользователь пройдёт шаги и приложит недостающее.
+    const refs = collectDraftFileRefs(draft.stepData);
+    const allFilesRestored = [...refs].every((id) => restoredIds.has(id));
+    const maxStep = Math.max(draft.maxReachableStep || 1, 1);
+    const resumeStep = allFilesRestored
+      ? Math.min(Math.max(draft.currentStep || 1, 1), maxStep)
+      : Math.min(maxStep, 2);
+    if (!allFilesRestored) {
+      ElMessage({
+        type: 'warning',
+        message: 'Часть файлов не удалось восстановить — приложите их заново',
+        duration: 6000,
+      });
+    }
     quizSessionStore.setCurrentStep(resumeStep);
-    quizSessionStore.setMaxReachableStep(resumeStep);
+    quizSessionStore.setMaxReachableStep(allFilesRestored ? maxStep : resumeStep);
     enableServerDraftSaving();
     currentStep.value = resumeStep;
     showForm.value = true;
