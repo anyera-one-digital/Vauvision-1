@@ -218,7 +218,7 @@
             
             <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
             <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
-              <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
+              <label class="form__label button">Ссылка на договор<!-- <span>*</span> --></label>
               <el-input
                 v-model="track.rightsContractLink"
                 type="text"
@@ -462,7 +462,7 @@
                   
                   <!-- Поле для ссылки на договор — аренда и исключительная лицензия -->
                   <div v-if="shouldShowRightsContractLink(track.rightsType)" class="form__group_inner">
-                    <label class="form__label button text_small">Ссылка на договор<!-- <span>*</span> --></label>
+                    <label class="form__label button">Ссылка на договор<!-- <span>*</span> --></label>
                     <el-input
                       v-model="track.rightsContractLink"
                       type="text"
@@ -1405,8 +1405,9 @@ const isReadyForNextStep = computed(() => {
         !singleErrors.value[index]?.textAuthor &&
         track.rightsType &&
         !singleErrors.value[index]?.rightsType &&
-        (!needsRightsContractLink(track.rightsType) ||
-         (track.rightsContractLink?.trim() && !singleErrors.value[index]?.rightsContractLink));
+        // Ссылка на договор НЕ обязательна (по просьбе клиента): пускаем без неё,
+        // блокируем только если ссылка введена и в неверном формате.
+        !singleErrors.value[index]?.rightsContractLink;
     }));
 
   const allAlbumsComplete = albumCountFromQuiz1.value === 0 || 
@@ -1430,10 +1431,10 @@ const isReadyForNextStep = computed(() => {
           isValidFullTrackTitleFormat(track.trackName) &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.trackName;
         
+        // Ссылка на договор НЕ обязательна: пускаем без неё, блокируем только при неверном формате.
         const isRightsValid = track.rightsType &&
           !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsType &&
-          (!needsRightsContractLink(track.rightsType) ||
-           (track.rightsContractLink?.trim() && !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsContractLink));
+          !albumErrors.value[albumIndex]?.tracks[trackIndex]?.rightsContractLink;
         
         return isTrackNameValid && isPerformerValid && isMusicAuthorValid && 
                isTextAuthorValid && isRightsValid;

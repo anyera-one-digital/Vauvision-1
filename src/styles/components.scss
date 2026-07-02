@@ -141,6 +141,14 @@ textarea,
 .el-message-box__message p {
   text-align: center;
 }
+/* Заголовок диалога — жирным */
+.el-message-box__title {
+  font-weight: 700;
+}
+/* Кнопки диалога с center: true — по центру таблички */
+.el-message-box--center .el-message-box__btns {
+  justify-content: center;
+}
 
 .ProseMirror {
   min-height: 80px;
@@ -477,5 +485,27 @@ textarea,
   .vti__dropdown-list.below,
   .vti__dropdown-list {
     width: calc(100vw - 32px);
+  }
+}
+
+/* ===== Меню свёрнуто до иконок (кнопка-шеврон в сайдбаре, состояние в localStorage) =====
+   Класс html.menu-collapsed ставит Menu.vue; контент страниц занимает освободившееся место. */
+html.menu-collapsed .personal__block,
+html.menu-collapsed .support__block {
+  width: calc(100% - 100px);
+  transition: width 0.25s ease;
+}
+
+@media (max-width: 1919px) {
+  html.menu-collapsed .personal__block,
+  html.menu-collapsed .support__block {
+    width: calc(100% - 64px);
+  }
+}
+
+@media (max-width: 1439px) {
+  html.menu-collapsed .personal__block,
+  html.menu-collapsed .support__block {
+    width: 100%;
   }
 }
