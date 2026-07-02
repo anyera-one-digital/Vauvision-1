@@ -1135,7 +1135,7 @@ onUnmounted(() => {
       </div>
       
       <div class="form__group">
-        <label class="form__label button">КАРАОКЕ ТЕКСТ МОЖНО <a href="https://vauvisionkaraoke.ru/" target="_blank">СДЕЛАТЬ ТУТ</a></label>
+        <label class="form__label button">КАРАОКЕ ТЕКСТ МОЖНО <a href="https://vauvision.com/karaoke/" target="_blank" rel="noopener noreferrer">СДЕЛАТЬ ТУТ</a></label>
         <ul class="form__hint_list">
           <li class="form__hint_item">
             <p class="form__hint text_small">Чтобы сделать караоке файл, зайдите на наш сайт, следуйте инструкции на сайте и создайте необходимые файлы. Обязательно подпишите их по названию треков, к которым они относятся.</p>
