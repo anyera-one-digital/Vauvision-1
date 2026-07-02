@@ -1,4 +1,5 @@
 import { reactive } from "vue";
+import { uploadDraftFile, deleteDraftFile } from "@/utils/quizDraftFiles";
 
 type StepDataMap = Record<string, any>;
 type BinaryEntry = {
@@ -92,6 +93,8 @@ export const useQuizSessionStore = () => {
 
   const putBinary = (storeName: BinaryStoreName, entry: BinaryEntry): void => {
     state.binary[storeName].set(entry.id, entry);
+    // Файл уходит и в серверный черновик — переживает F5 (при восстановлении заливка отключена)
+    uploadDraftFile(storeName, entry);
   };
 
   const getBinary = (storeName: BinaryStoreName, id: string): BinaryEntry | null => {
@@ -100,6 +103,10 @@ export const useQuizSessionStore = () => {
 
   const deleteBinary = (storeName: BinaryStoreName, id: string): void => {
     state.binary[storeName].delete(id);
+    // Пользователь убрал файл — из серверного черновика тоже.
+    // Массовые очистки (resetSession/clearBinaryStore) сервер НЕ трогают:
+    // они происходят при каждом выходе из визарда, а черновик должен пережить уход.
+    deleteDraftFile(id);
   };
 
   const clearBinaryStore = (storeName: BinaryStoreName): void => {

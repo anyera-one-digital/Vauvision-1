@@ -37,16 +37,24 @@
                 </p>
               </li>
             </ul>
+            <!-- Незавершённый черновик с сервера -->
+            <div v-if="serverDraft" class="quiz__draft_banner">
+              <p class="quiz__draft_title">У вас есть незавершённый черновик релиза</p>
+              <p class="quiz__draft_desc">
+                Сохранён {{ formatDraftAge(serverDraft.updatedAt) }}. Заполненные поля и
+                загруженные файлы восстановятся — продолжите с того места, где остановились.
+              </p>
+            </div>
             <div class="quiz__preview_buttons">
-              <!-- <button 
-                v-if="hasSavedData"
-                class="quiz__restart_button button__red button" 
-                @click="restartFromBeginning"
-                :disabled="isRestarting"
-              >
-                <span>{{ isRestarting ? 'Очистка данных...' : 'Сбросить' }}</span>
-              </button> -->
-              <button class="quiz__preview_button button__black button" @click="showQuizForm"><span>Продолжить</span></button>
+              <template v-if="serverDraft">
+                <button class="quiz__preview_button button__black button" :disabled="isRestoringDraft" @click="restoreDraftAndStart">
+                  <span>{{ isRestoringDraft ? 'Восстановление…' : 'Продолжить черновик' }}</span>
+                </button>
+                <button class="quiz__restart_button button__red button" @click="startOver">
+                  <span>Начать заново</span>
+                </button>
+              </template>
+              <button v-else class="quiz__preview_button button__black button" @click="showQuizForm"><span>Продолжить</span></button>
             </div>
           </div>
 
@@ -71,6 +79,23 @@ import Menu from "@/components/layout/Menu.vue";
 import QuizForm from "@/components/layout/QuizForm.vue";
 import { useQuizSessionStore } from "@/composables/quizSessionStore";
 import { resetQuizDraft } from "@/utils/quizDraftReset";
+import { openDB } from "@/utils/inMemoryIdb";
+import { ElMessage } from "element-plus";
+import {
+  restoreDraftFiles,
+  collectDraftFileRefs,
+  setDraftFileSyncEnabled,
+} from "@/utils/quizDraftFiles";
+import {
+  loadServerDraft,
+  deleteServerDraft,
+  scheduleServerDraftSave,
+  flushServerDraftSave,
+  cancelServerDraftSave,
+  enableServerDraftSaving,
+  formatDraftAge,
+  type QuizServerDraft,
+} from "@/utils/quizServerDraft";
 import {
   parsePaymentQueryParam,
   paymentQueryNeedsNormalization,
@@ -87,6 +112,10 @@ const quizSessionStore = useQuizSessionStore();
 // Состояния для переключения
 const showForm = ref(false);
 const currentStep = ref(1);
+
+// Серверный черновик (баннер «Продолжить черновик» на превью)
+const serverDraft = ref<QuizServerDraft | null>(null);
+const isRestoringDraft = ref(false);
 
 /** Возврат с оплаты на шаг 8 — показ PaymentStatus в QuizForm */
 const paymentReturnStatus = computed<QuizPaymentReturnStatus | null>(() =>
@@ -140,8 +169,9 @@ watch(
   { immediate: true },
 );
 
-// Перед входом в форму — проверка паспорта и реквизитов (как на прод-сборке)
-const showQuizForm = async () => {
+// Перед входом в форму — проверка паспорта и реквизитов (как на прод-сборке).
+// true = можно продолжать, false = отправили в настройки.
+const ensureProfileReady = async (): Promise<boolean> => {
   try {
     const { fetchReleaseProfileReadiness } = await import(
       '@/utils/releaseProfileReadiness'
@@ -157,18 +187,96 @@ const showQuizForm = async () => {
           },
         }),
       );
-      return;
+      return false;
     }
   } catch {
     /* без сети / ошибка проверки — не блокируем оформление */
   }
+  return true;
+};
+
+const showQuizForm = async () => {
+  if (!(await ensureProfileReady())) return;
   await clearPaymentQueryFromUrl();
+  cancelServerDraftSave();
   quizSessionStore.resetSession();
   quizSessionStore.setCurrentStep(1);
   quizSessionStore.setMaxReachableStep(1);
   await resetQuizDraft();
+  enableServerDraftSaving();
   currentStep.value = 1;
   showForm.value = true;
+};
+
+// «Начать заново» при существующем черновике: удаляем его и стартуем с нуля
+const startOver = async () => {
+  serverDraft.value = null;
+  void deleteServerDraft();
+  await showQuizForm();
+};
+
+// «Продолжить черновик»: вливаем сохранённое состояние шагов, скачиваем файлы
+// (аудио/обложка — см. quizDraftFiles) и возвращаем пользователя на сохранённый шаг.
+const restoreDraftAndStart = async () => {
+  const draft = serverDraft.value;
+  if (!draft || isRestoringDraft.value) return;
+  isRestoringDraft.value = true;
+  try {
+    if (!(await ensureProfileReady())) return;
+    await clearPaymentQueryFromUrl();
+    cancelServerDraftSave();
+    quizSessionStore.resetSession();
+    await resetQuizDraft();
+
+    // Тот же канал, что используют шаги: in-memory idb → quizSessionStore
+    const db = await openDB('quizDB', 2, {
+      upgrade(d) {
+        if (!d.objectStoreNames.contains('quizState')) {
+          d.createObjectStore('quizState', { keyPath: 'id' });
+        }
+      },
+    });
+    for (const [key, value] of Object.entries(draft.stepData)) {
+      if (!value || typeof value !== 'object') continue;
+      await db.put('quizState', { ...(value as object), id: (value as any).id ?? key });
+    }
+
+    // Бинарники (аудио/обложка/доп.файлы) приходят из серверного черновика.
+    // Фоновую заливку на время восстановления глушим: файлы и так с сервера.
+    setDraftFileSyncEnabled(false);
+    let restoredIds = new Set<string>();
+    try {
+      restoredIds = await restoreDraftFiles((store, entry) =>
+        quizSessionStore.putBinary(store, entry),
+      );
+    } finally {
+      setDraftFileSyncEnabled(true);
+    }
+
+    // Все файлы, на которые ссылается черновик, восстановлены → возвращаем на сохранённый шаг.
+    // Иначе (заливка не успела/сеть) — на шаг 2: пользователь пройдёт шаги и приложит недостающее.
+    const refs = collectDraftFileRefs(draft.stepData);
+    const allFilesRestored = [...refs].every((id) => restoredIds.has(id));
+    const maxStep = Math.max(draft.maxReachableStep || 1, 1);
+    const resumeStep = allFilesRestored
+      ? Math.min(Math.max(draft.currentStep || 1, 1), maxStep)
+      : Math.min(maxStep, 2);
+    if (!allFilesRestored) {
+      ElMessage({
+        type: 'warning',
+        message: 'Часть файлов не удалось восстановить — приложите их заново',
+        duration: 6000,
+      });
+    }
+    quizSessionStore.setCurrentStep(resumeStep);
+    quizSessionStore.setMaxReachableStep(allFilesRestored ? maxStep : resumeStep);
+    enableServerDraftSaving();
+    currentStep.value = resumeStep;
+    showForm.value = true;
+    serverDraft.value = null;
+  } finally {
+    isRestoringDraft.value = false;
+  }
 };
 
 // Функция для переключения шагов
@@ -180,21 +288,64 @@ const goToStep = (step: number) => {
 
 // Функция для возврата к превью
 const handleGoBack = () => {
+  flushServerDraftSave(); // сохраняем последний ввод в черновик
   showForm.value = false;
   currentStep.value = 1;
   quizSessionStore.resetSession();
+  // показываем баннер черновика, если есть что продолжать
+  void loadServerDraft().then((draft) => {
+    if (!showForm.value) {
+      serverDraft.value = draft;
+    }
+  });
 };
 
+// Автосейв серверного черновика: изменения состояния шагов/навигации → debounce → draft.php
+watch(
+  [
+    () => quizSessionStore.state.stepData,
+    () => quizSessionStore.state.currentStep,
+    () => quizSessionStore.state.maxReachableStep,
+  ],
+  () => {
+    if (!showForm.value) return;
+    if (parsePaymentQueryParam(route.query.payment)) return; // экран возврата с оплаты
+    if (Object.keys(quizSessionStore.state.stepData).length === 0) return;
+    scheduleServerDraftSave(() => ({
+      stepData: JSON.parse(JSON.stringify(quizSessionStore.state.stepData)),
+      currentStep: quizSessionStore.state.currentStep,
+      maxReachableStep: quizSessionStore.state.maxReachableStep,
+    }));
+  },
+  { deep: true },
+);
+
 const handleBeforeUnload = () => {
+  // не теряем последние ~1.5 сек ввода при закрытии вкладки
+  flushServerDraftSave();
   quizSessionStore.resetSession();
 };
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
+  // Черновик показываем только на превью (не при возврате с оплаты)
+  if (!parsePaymentQueryParam(route.query.payment)) {
+    const continueRequested = route.query.draft === 'continue';
+    void loadServerDraft().then((draft) => {
+      if (!showForm.value) {
+        serverDraft.value = draft;
+        // Переход со строки-напоминания на главной: сразу восстанавливаем, минуя превью
+        if (continueRequested && draft) {
+          void restoreDraftAndStart();
+        }
+      }
+    });
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload);
+  flushServerDraftSave();
 });
 </script>
 
@@ -308,6 +459,30 @@ onUnmounted(() => {
 .quiz__restart_button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+.quiz__draft_banner {
+  margin-top: 30px;
+  padding: 16px 20px;
+  max-width: 860px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--color);
+  background-color: var(--bg-gray);
+
+  @media (max-width: 767px) {
+    margin-top: 20px;
+    padding: 14px 15px;
+  }
+}
+
+.quiz__draft_title {
+  font-weight: 600;
+}
+
+.quiz__draft_desc {
+  padding-top: 6px;
+  font-size: 14px;
+  opacity: 0.85;
 }
 
 @media (max-width: 1439px) {
