@@ -41,7 +41,10 @@
         </div>
       </div>
 
-      <LabelArtistsMenuBlock v-show="!collapsed" />
+      <!-- обёртка: компонент многокорневой, v-show напрямую на него не применяется -->
+      <div v-show="!collapsed">
+        <LabelArtistsMenuBlock />
+      </div>
 
       <!-- Основная навигация -->
       <ul class="menu__list">
@@ -472,6 +475,15 @@ onUnmounted(() => {
     width: 84px;
     // сохраняем левый край: центр (точка left) смещается на (319 - 84) / 2 = 117.5px влево
     left: calc(50% - ((1920px - 160px) / 2) + 140px - 117.5px);
+
+    // фон-подложка справа от блока ужимается до ширины свёрнутого меню
+    &::after {
+      width: calc(100vw + 84px);
+
+      @media (max-width: 1919px) {
+        width: calc(100vw + 84px);
+      }
+    }
 
     @media (max-width: 1919px) {
       left: 20px;
