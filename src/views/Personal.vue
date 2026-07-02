@@ -197,6 +197,18 @@
                           >
                             <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
                           </svg>
+                          <!-- Карандаш: настройка смартлинка (только под фича-гейтом) -->
+                          <svg
+                            v-if="canCustomizeSmartlink"
+                            width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
+                            role="button"
+                            tabindex="0"
+                            aria-label="Настроить ссылку"
+                            @click.stop.prevent="openSmartlinkEditor(release)"
+                            @keydown.enter.stop.prevent="openSmartlinkEditor(release)"
+                          >
+                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
+                          </svg>
                         </a>
                         <!-- Только поддержка (без выбора типа) -->
                         <div
@@ -1024,12 +1036,168 @@
   </div>
 </Teleport>
 
+<!-- Редактор смартлинка (кастомизация): адрес / порядок кнопок / скрытие / свои ссылки -->
+<el-drawer
+  v-model="smartlinkEditorVisible"
+  title="Настройка смартлинка"
+  :size="smartlinkDrawerSize"
+  direction="rtl"
+  :lock-scroll="false"
+  append-to-body
+  class="smartlink-editor"
+>
+  <div v-loading="smartlinkEditorLoading" class="sl-editor">
+    <!-- Обложка и название (работает и для пресейва: данные уйдут и на страницу band.link) -->
+    <div class="sl-block">
+      <div class="sl-label">Обложка и название</div>
+      <div class="sl-meta">
+        <div
+          class="sl-meta__cover"
+          role="button"
+          tabindex="0"
+          title="Заменить обложку"
+          @click="pickSmartlinkCover"
+          @keydown.enter.prevent="pickSmartlinkCover"
+        >
+          <img v-if="smartlinkMeta.cover" :src="smartlinkMeta.cover" alt="" />
+          <span v-else class="sl-meta__cover-ph">♪</span>
+          <span class="sl-meta__cover-edit">{{ smartlinkCoverUploading ? 'Загрузка…' : 'Заменить' }}</span>
+        </div>
+        <div class="sl-meta__fields">
+          <input
+            class="sl-meta__input"
+            v-model="smartlinkMeta.artist"
+            placeholder="Псевдоним артиста"
+            maxlength="255"
+            spellcheck="false"
+          />
+          <input
+            class="sl-meta__input"
+            v-model="smartlinkMeta.release"
+            placeholder="Название релиза"
+            maxlength="255"
+            spellcheck="false"
+          />
+        </div>
+      </div>
+      <input
+        ref="smartlinkCoverInputRef"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        class="sl-meta__file"
+        @change="onSmartlinkCoverPicked"
+      />
+      <p class="sl-hint">Если оставить пустым — имя и обложка подставятся автоматически по UPC после выхода релиза.</p>
+    </div>
+
+    <!-- Свой адрес -->
+    <div class="sl-block">
+      <div class="sl-label">Свой адрес ссылки</div>
+      <div class="sl-address" :class="'sl-address--' + smartlinkAddressStatus">
+        <span class="sl-address__prefix">vauvision.com/link/</span>
+        <input
+          class="sl-address__input"
+          v-model="smartlinkAddress"
+          @input="onSmartlinkAddressInput"
+          placeholder="moy-reliz"
+          spellcheck="false"
+          autocomplete="off"
+        />
+      </div>
+      <p class="sl-hint" :class="'sl-hint--' + smartlinkAddressStatus">
+        <template v-if="smartlinkAddressStatus === 'checking'">Проверяем…</template>
+        <template v-else-if="smartlinkAddressStatus === 'free'">✓ Адрес свободен</template>
+        <template v-else-if="smartlinkAddressStatus === 'taken'">✕ Адрес занят, придумайте другой</template>
+        <template v-else-if="smartlinkAddressStatus === 'invalid'">Минимум 3 символа: латиница, цифры, дефис</template>
+        <template v-else>Короткий адрес: латиница, цифры и дефис. Старая ссылка продолжит работать.</template>
+      </p>
+    </div>
+
+    <!-- Площадки -->
+    <div class="sl-block">
+      <div class="sl-label">
+        Кнопки площадок
+        <span class="sl-label__hint">— тяните за <b>⠿</b>, чтобы поменять порядок</span>
+      </div>
+      <draggable
+        v-model="smartlinkVisiblePlatforms"
+        item-key="key"
+        handle=".sl-drag"
+        :animation="220"
+        ghost-class="sl-row--ghost"
+        chosen-class="sl-row--chosen"
+        drag-class="sl-row--drag"
+        class="sl-list"
+      >
+        <template #item="{ element }">
+          <div class="sl-row">
+            <span class="sl-drag" aria-label="Перетащить">⠿</span>
+            <img
+              v-if="element.icon"
+              class="sl-row__icon"
+              :src="'/l-assets/icons/' + element.icon"
+              alt=""
+              loading="lazy"
+            />
+            <img
+              v-else-if="!element.auto"
+              class="sl-row__icon"
+              :src="'/l-assets/vau-logo.svg'"
+              alt=""
+              loading="lazy"
+            />
+            <span v-else class="sl-row__icon sl-row__icon--ph">♪</span>
+            <span class="sl-row__name">{{ element.name }}</span>
+            <span v-if="!element.auto" class="sl-row__badge">своя</span>
+            <button
+              class="sl-row__del"
+              @click="removeSmartlinkPlatform(element)"
+              aria-label="Удалить площадку"
+              title="Удалить"
+            >✕</button>
+          </div>
+        </template>
+      </draggable>
+      <button class="sl-add" @click="addSmartlinkExtra">＋ Добавить свою ссылку</button>
+      <!-- Удалённые площадки: можно вернуть одним кликом -->
+      <div v-if="smartlinkHiddenPlatforms.length" class="sl-hidden">
+        <div class="sl-label">Удалённые площадки</div>
+        <div class="sl-hidden__chips">
+          <button
+            v-for="p in smartlinkHiddenPlatforms"
+            :key="p.key"
+            class="sl-hidden__chip"
+            @click="restoreSmartlinkPlatform(p)"
+            :title="'Вернуть ' + p.name"
+          >{{ p.name }} <span class="sl-hidden__plus">+</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <template #footer>
+    <div class="sl-footer">
+      <a
+        v-if="smartlinkPublicUrl"
+        :href="smartlinkPublicUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="sl-open"
+      >Открыть ↗</a>
+      <el-button type="primary" :loading="smartlinkSaving" @click="saveSmartlink">
+        Сохранить
+      </el-button>
+    </div>
+  </template>
+</el-drawer>
+
 </template>
 
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from 'element-plus';
+import draggable from 'vuedraggable';
 import DOMPurify from "dompurify";
 import { sendRequest } from '@/utils/api';
 import { fetchSharedCabinetGetData } from '@/utils/fetchSharedCabinetGetData';
@@ -1250,6 +1418,15 @@ const syncBalanceWithSideMenu = async () => {
 };
 
 const userName = ref<string>('');
+
+/** ID текущего пользователя (из getData) — для фича-гейта редактора смартлинков. */
+const currentUserId = ref<number>(0);
+/** Фича-гейт кастомизации смартлинка (на время теста — только эти аккаунты). */
+const SMARTLINK_EDITOR_USER_IDS = [11401, 22168, 50];
+const canCustomizeSmartlink = computed(() =>
+  SMARTLINK_EDITOR_USER_IDS.includes(currentUserId.value)
+);
+
 /** Заголовок ЛК: псевдоним из ростера лейбла / логин getData, иначе имя как раньше */
 const personalHeadDisplayName = computed(() => {
   const fromLabel = labelCabinetPseudonym.value.trim();
@@ -1938,12 +2115,22 @@ const selectYear = async (year: string) => {
       showReportPopup.value = false;
       showQuarterPopup.value = true;
     } else {
-      alert('Для выбранного года нет доступных кварталов');
+      ElMessage({
+        message: 'Ваш отчёт ещё не готов',
+        type: 'info',
+        duration: 3000,
+        showClose: true
+      });
     }
     
   } catch (error) {
     console.error('Ошибка при загрузке кварталов:', error);
-    alert('Не удалось загрузить список кварталов');
+    ElMessage({
+      message: 'Ваш отчёт ещё не готов',
+      type: 'info',
+      duration: 3000,
+      showClose: true
+    });
     availableQuarters.value = [];
   } finally {
     isLoadingQuarters.value = false;
@@ -2153,6 +2340,7 @@ const fetchProfileData = async (prefetched?: Record<string, unknown>) => {
     const user = data.user as Record<string, unknown> | undefined;
     if (user) {
       userName.value = (user.name as string) || (user.login as string) || 'Пользователь';
+      currentUserId.value = Number(user.id) || 0;
     }
 
     if (data.profile) {
@@ -2967,6 +3155,7 @@ const promptUpcAndCreateSmartlink = async (
       {
         confirmButtonText: 'Создать ссылку',
         cancelButtonText: 'Отмена',
+        lockScroll: false,
         inputPlaceholder: 'UPC (от 12 до 255 цифр)',
         inputValidator: (val: string) => {
           const digits = (val || '').replace(/\D+/g, '');
@@ -3016,6 +3205,343 @@ const handleSmartlinkCommand = async (
 ): Promise<void> => {
   if (creatingSmartlinkIds.value.has(release.id)) return;
   await createSmartlinkForRelease(release, mode);
+};
+
+/* ───────────── Редактор смартлинка (кастомизация: адрес / порядок / скрытие / свои ссылки) ───────────── */
+
+interface SmartlinkPlatform {
+  key: string;
+  name: string;
+  url: string;
+  icon: string;
+  auto: boolean;
+  hidden: boolean;
+}
+
+const smartlinkEditorVisible = ref(false);
+const smartlinkEditorLoading = ref(false);
+const smartlinkSaving = ref(false);
+const smartlinkEditorRelease = ref<Release | null>(null);
+const smartlinkPublicUrl = ref('');
+const smartlinkAddress = ref('');
+const smartlinkAddressInitial = ref('');
+const smartlinkAddressStatus = ref<'idle' | 'checking' | 'free' | 'taken' | 'invalid'>('idle');
+const smartlinkPlatforms = ref<SmartlinkPlatform[]>([]);
+let smartlinkAddressTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Видимые площадки — то, что тянут в списке; сеттер сохраняет новый порядок, скрытые остаются в хвосте. */
+const smartlinkVisiblePlatforms = computed<SmartlinkPlatform[]>({
+  get: () => smartlinkPlatforms.value.filter((p) => !p.hidden),
+  set: (visible) => {
+    smartlinkPlatforms.value = [
+      ...visible,
+      ...smartlinkPlatforms.value.filter((p) => p.hidden),
+    ];
+  },
+});
+
+const smartlinkHiddenPlatforms = computed<SmartlinkPlatform[]>(() =>
+  smartlinkPlatforms.value.filter((p) => p.hidden)
+);
+
+/** Метаданные лендинга/пресейва: псевдоним, название, обложка (ручные правки поверх авто по UPC). */
+const smartlinkMeta = ref<{ artist: string; release: string; cover: string }>({
+  artist: '',
+  release: '',
+  cover: '',
+});
+const smartlinkCoverUploading = ref(false);
+const smartlinkCoverInputRef = ref<HTMLInputElement | null>(null);
+
+const pickSmartlinkCover = (): void => {
+  if (smartlinkCoverUploading.value) return;
+  smartlinkCoverInputRef.value?.click();
+};
+
+/** Загрузка своей обложки: multipart на бэк, в meta_cover уходит полученный URL. */
+const onSmartlinkCoverPicked = async (e: Event): Promise<void> => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) {
+    ElMessage.error('Файл слишком большой (максимум 8 МБ)');
+    return;
+  }
+  const release = smartlinkEditorRelease.value;
+  if (!release) return;
+  smartlinkCoverUploading.value = true;
+  try {
+    const fd = new FormData();
+    fd.append('RELEASE_ID', String(release.id));
+    fd.append('cover', file);
+    const resp = await fetch('/ajax_vue/ajax/profile/uploadSmartlinkCover.php', {
+      method: 'POST',
+      body: fd,
+    });
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok || !json || json.error) {
+      ElMessage.error(json?.message || 'Не удалось загрузить обложку');
+      return;
+    }
+    smartlinkMeta.value.cover = String(json.data?.url ?? '');
+    ElMessage.success('Обложка загружена — не забудьте сохранить');
+  } catch {
+    ElMessage.error('Не удалось загрузить обложку');
+  } finally {
+    smartlinkCoverUploading.value = false;
+  }
+};
+
+const smartlinkDrawerSize = computed(() =>
+  typeof window !== 'undefined' && window.innerWidth < 560 ? '100%' : '440px'
+);
+
+/** Клиентская нормализация адреса (совпадает с серверной BandlinkClass::normalizeAddressName). */
+const normalizeSmartlinkAddress = (v: string): string =>
+  (v || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+/** Открывает редактор смартлинка: тянет текущее состояние с бэка. */
+const openSmartlinkEditor = async (release: Release): Promise<void> => {
+  smartlinkEditorRelease.value = release;
+  smartlinkEditorVisible.value = true;
+  smartlinkEditorLoading.value = true;
+  smartlinkPlatforms.value = [];
+  smartlinkAddress.value = '';
+  smartlinkAddressInitial.value = '';
+  smartlinkAddressStatus.value = 'idle';
+  smartlinkPublicUrl.value = '';
+  smartlinkMeta.value = { artist: '', release: '', cover: '' };
+  try {
+    const resp = await sendRequest('post', '/ajax_vue/ajax/profile/getSmartlink.php', {
+      RELEASE_ID: release.id,
+    });
+    const d = (resp.data?.data ?? {}) as Record<string, any>;
+    smartlinkPublicUrl.value = String(d.public_url ?? '');
+    smartlinkAddress.value = String(d.address?.name ?? '');
+    smartlinkAddressInitial.value = smartlinkAddress.value;
+    smartlinkMeta.value = {
+      artist: String(d.meta?.artist ?? ''),
+      release: String(d.meta?.release ?? ''),
+      cover: String(d.meta?.cover ?? ''),
+    };
+    smartlinkPlatforms.value = Array.isArray(d.platforms)
+      ? d.platforms.map((p: any) => ({
+          key: String(p.key),
+          name: String(p.name),
+          url: String(p.url),
+          icon: String(p.icon ?? ''),
+          auto: !!p.auto,
+          hidden: !!p.hidden,
+        }))
+      : [];
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || 'Не удалось загрузить смартлинк');
+    smartlinkEditorVisible.value = false;
+  } finally {
+    smartlinkEditorLoading.value = false;
+  }
+};
+
+/** Ввод адреса: нормализуем и с задержкой проверяем занятость на бэке. */
+const onSmartlinkAddressInput = (): void => {
+  smartlinkAddress.value = normalizeSmartlinkAddress(smartlinkAddress.value);
+  const name = smartlinkAddress.value;
+  if (smartlinkAddressTimer) clearTimeout(smartlinkAddressTimer);
+  if (name === '' || name === smartlinkAddressInitial.value) {
+    smartlinkAddressStatus.value = 'idle';
+    return;
+  }
+  if (name.length < 3) {
+    smartlinkAddressStatus.value = 'invalid';
+    return;
+  }
+  smartlinkAddressStatus.value = 'checking';
+  smartlinkAddressTimer = setTimeout(async () => {
+    const release = smartlinkEditorRelease.value;
+    if (!release) return;
+    try {
+      const resp = await sendRequest('post', '/ajax_vue/ajax/profile/checkSmartlinkAddress.php', {
+        RELEASE_ID: release.id,
+        address_name: name,
+      });
+      if (smartlinkAddress.value !== name) return; // поле уже изменилось
+      const d = (resp.data?.data ?? {}) as Record<string, any>;
+      smartlinkAddressStatus.value = !d.valid ? 'invalid' : d.free ? 'free' : 'taken';
+    } catch {
+      smartlinkAddressStatus.value = 'idle';
+    }
+  }, 450);
+};
+
+/**
+ * Иконка своей ссылки для мгновенного показа в редакторе (зеркало серверной
+ * BandlinkClass::detectExtraIcon): сначала по домену URL, затем по названию кнопки.
+ * После сохранения сервер пересчитает сам — это только для отображения до сохранения.
+ */
+const detectExtraIcon = (name: string, url: string): string => {
+  const host = (() => {
+    try {
+      return new URL(url).host.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  const byHost: Array<[string, string]> = [
+    ['music.youtube', 'youtubemusic.svg'],
+    ['youtube', 'youtube.svg'],
+    ['youtu.be', 'youtube.svg'],
+    ['music.yandex', 'yandexmusic.png'],
+    ['yandex', 'yandexmusic.png'],
+    ['vk.com', 'vk.svg'],
+    ['boom.ru', 'vk.svg'],
+    ['zvuk', 'zvuk.png'],
+    ['music.mts', 'kion.png'],
+    ['kion', 'kion.png'],
+    ['spotify', 'spotify.svg'],
+    ['itunes', 'itunes.svg'],
+    ['apple', 'applemusic.svg'],
+    ['deezer', 'deezer.svg'],
+    ['soundcloud', 'soundcloud.svg'],
+    ['tidal', 'tidal.svg'],
+  ];
+  for (const [needle, icon] of byHost) {
+    if (host.includes(needle)) return icon;
+  }
+  const t = (name || '').trim().toLowerCase();
+  if (!t) return '';
+  const byName: Array<[string, string]> = [
+    ['youtube music', 'youtubemusic.svg'],
+    ['ютуб музыка', 'youtubemusic.svg'],
+    ['youtube', 'youtube.svg'],
+    ['ютуб', 'youtube.svg'],
+    ['ютьюб', 'youtube.svg'],
+    ['яндекс', 'yandexmusic.png'],
+    ['yandex', 'yandexmusic.png'],
+    ['вконтакте', 'vk.svg'],
+    ['vk музыка', 'vk.svg'],
+    ['вк музыка', 'vk.svg'],
+    ['звук', 'zvuk.png'],
+    ['zvuk', 'zvuk.png'],
+    ['кион', 'kion.png'],
+    ['kion', 'kion.png'],
+    ['мтс', 'kion.png'],
+    ['spotify', 'spotify.svg'],
+    ['спотифай', 'spotify.svg'],
+    ['itunes', 'itunes.svg'],
+    ['айтюнс', 'itunes.svg'],
+    ['apple', 'applemusic.svg'],
+    ['эпл', 'applemusic.svg'],
+    ['эппл', 'applemusic.svg'],
+    ['deezer', 'deezer.svg'],
+    ['дизер', 'deezer.svg'],
+    ['soundcloud', 'soundcloud.svg'],
+    ['саундклауд', 'soundcloud.svg'],
+    ['tidal', 'tidal.svg'],
+    ['тайдал', 'tidal.svg'],
+  ];
+  for (const [needle, icon] of byName) {
+    if (t.includes(needle)) return icon;
+  }
+  const exact: Record<string, string> = { sc: 'soundcloud.svg', yt: 'youtube.svg', 'вк': 'vk.svg', vk: 'vk.svg' };
+  return exact[t] ?? '';
+};
+
+/** Удалить площадку из списка: авто-площадки скрываются (можно вернуть), свои ссылки удаляются совсем. */
+const removeSmartlinkPlatform = (p: SmartlinkPlatform): void => {
+  if (p.auto) {
+    p.hidden = true;
+  } else {
+    smartlinkPlatforms.value = smartlinkPlatforms.value.filter((x) => x.key !== p.key);
+  }
+};
+
+/** Вернуть удалённую площадку в конец списка. */
+const restoreSmartlinkPlatform = (p: SmartlinkPlatform): void => {
+  p.hidden = false;
+};
+
+/** Добавить свою ссылку (название + URL). */
+const addSmartlinkExtra = async (): Promise<void> => {
+  try {
+    const { value: name } = await ElMessageBox.prompt('Название кнопки', 'Своя ссылка', {
+      confirmButtonText: 'Далее',
+      cancelButtonText: 'Отмена',
+      lockScroll: false,
+      inputPlaceholder: 'Например: Клип на YouTube',
+      inputValidator: (v: string) =>
+        v && v.trim().length > 0 && v.trim().length <= 60 ? true : 'От 1 до 60 символов',
+    });
+    const { value: url } = await ElMessageBox.prompt('Ссылка', 'Своя ссылка', {
+      confirmButtonText: 'Добавить',
+      cancelButtonText: 'Отмена',
+      lockScroll: false,
+      inputPlaceholder: 'https://…',
+      inputValidator: (v: string) =>
+        /^https?:\/\/.+/i.test((v || '').trim()) ? true : 'Ссылка должна начинаться с http(s)://',
+    });
+    const id = 'x' + Math.random().toString(36).slice(2, 10);
+    smartlinkPlatforms.value.push({
+      key: 'extra:' + id,
+      name: name.trim(),
+      url: url.trim(),
+      icon: detectExtraIcon(name, url),
+      auto: false,
+      hidden: false,
+    });
+  } catch {
+    /* отмена */
+  }
+};
+
+/** Сохранить кастомизацию смартлинка. */
+const saveSmartlink = async (): Promise<void> => {
+  const release = smartlinkEditorRelease.value;
+  if (!release) return;
+  if (smartlinkAddressStatus.value === 'taken') {
+    ElMessage.error('Адрес занят, придумайте другой');
+    return;
+  }
+  if (smartlinkAddressStatus.value === 'invalid') {
+    ElMessage.error('Адрес: минимум 3 символа (латиница, цифры, дефис)');
+    return;
+  }
+  smartlinkSaving.value = true;
+  try {
+    const order = smartlinkPlatforms.value.map((p) => p.key);
+    const hidden = smartlinkPlatforms.value.filter((p) => p.hidden).map((p) => p.key);
+    const extra = smartlinkPlatforms.value
+      .filter((p) => p.key.startsWith('extra:'))
+      .map((p) => ({ id: p.key.slice(6), name: p.name, url: p.url }));
+    const payload: Record<string, unknown> = { RELEASE_ID: release.id, order, hidden, extra };
+    payload.meta_artist = smartlinkMeta.value.artist.trim();
+    payload.meta_release = smartlinkMeta.value.release.trim();
+    payload.meta_cover = smartlinkMeta.value.cover.trim();
+    const addr = smartlinkAddress.value.trim();
+    if (addr && addr !== smartlinkAddressInitial.value) payload.address_name = addr;
+
+    const resp = await sendRequest(
+      'post',
+      '/ajax_vue/ajax/profile/updateSmartlink.php',
+      payload
+    );
+    const d = (resp.data?.data ?? {}) as Record<string, any>;
+    if (d.public_url) {
+      smartlinkPublicUrl.value = String(d.public_url);
+      release.link = String(d.public_url);
+    }
+    smartlinkAddressInitial.value = String(d.address?.name ?? smartlinkAddressInitial.value);
+    ElMessage.success('Смартлинк сохранён');
+    smartlinkEditorVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || 'Не удалось сохранить смартлинк');
+  } finally {
+    smartlinkSaving.value = false;
+  }
 };
 
 const handleReleaseServiceComingSoon = () => {
@@ -3677,7 +4203,9 @@ onUnmounted(() => {
     &:has(.personal__releases_code:only-child) {
       justify-content: flex-start;
 
-      .personal__releases_code {
+      // Только ПРЯМЫЕ чипы-коды: вложенный чип (например, внутри поля ссылки)
+      // ложно триггерил правило — из-за flex:0 0 auto не сжимался и выезжал из колонки.
+      > .personal__releases_code {
         flex: 0 0 auto;
         min-width: 200px;
       }
@@ -4900,6 +5428,341 @@ onUnmounted(() => {
 
   &__months {
     opacity: 0.8;
+  }
+}
+
+/* ───────────── Редактор смартлинка (кастомизация) ───────────── */
+:deep(.smartlink-editor) {
+  .el-drawer__header {
+    margin-bottom: 0;
+    padding: 20px 22px;
+    border-bottom: 1px solid var(--border, #e8e8e8);
+    font-weight: 700;
+    color: #131313;
+  }
+  .el-drawer__body {
+    padding: 22px;
+  }
+  .el-drawer__footer {
+    padding: 16px 22px;
+    border-top: 1px solid var(--border, #e8e8e8);
+  }
+}
+
+.sl-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.sl-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sl-label {
+  font-weight: 700;
+  font-size: 15px;
+  color: #131313;
+
+  &__hint {
+    font-weight: 400;
+    color: #85858e;
+    font-size: 13px;
+  }
+}
+
+.sl-address {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e2e2e2;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+  background: #fff;
+
+  &--free { border-color: #2faa5b; }
+  &--taken,
+  &--invalid { border-color: #ab1115; }
+
+  &__prefix {
+    padding: 0 2px 0 14px;
+    color: #a0a0a8;
+    font-size: 14px;
+    white-space: nowrap;
+    user-select: none;
+  }
+  &__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    padding: 13px 14px 13px 2px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #131313;
+    background: transparent;
+  }
+}
+
+.sl-hint {
+  font-size: 13px;
+  color: #85858e;
+  min-height: 18px;
+  transition: color 0.15s;
+
+  &--free { color: #2faa5b; }
+  &--taken,
+  &--invalid { color: #ab1115; }
+  &--checking { color: #a0a0a8; }
+}
+
+.sl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 12px;
+  transition: box-shadow 0.18s, border-color 0.18s, opacity 0.18s, transform 0.05s;
+
+  &--off {
+    opacity: 0.5;
+  }
+  &--ghost {
+    opacity: 0.35;
+    background: #f3f3f1;
+    border-style: dashed;
+  }
+  &--chosen {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    border-color: #d9d9d9;
+  }
+  &--drag {
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  }
+
+  &__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+    color: #131313;
+  }
+  &__badge {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: #ab1115;
+    background: rgba(171, 17, 21, 0.08);
+    border-radius: 6px;
+    padding: 2px 7px;
+  }
+  &__icon {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    object-fit: contain;
+  }
+  &__icon--ph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #131313;
+    color: #85858e;
+    font-size: 13px;
+  }
+  &__del {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: #b7b7bd;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover {
+      color: #ab1115;
+      background: rgba(171, 17, 21, 0.08);
+    }
+  }
+}
+
+.sl-drag {
+  flex: 0 0 auto;
+  cursor: grab;
+  color: #c2c2c8;
+  font-size: 17px;
+  line-height: 1;
+  user-select: none;
+  touch-action: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.sl-add {
+  margin-top: 2px;
+  align-self: flex-start;
+  border: 1px dashed #cfcfcf;
+  background: transparent;
+  color: #6b6b73;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: #ab1115;
+    color: #ab1115;
+    background: rgba(171, 17, 21, 0.05);
+  }
+}
+
+.sl-meta {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+
+  &__cover {
+    position: relative;
+    flex: 0 0 auto;
+    width: 88px;
+    height: 88px;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid #ececec;
+    background: #fafaf8;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+  }
+  &__cover-ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: #131313;
+    color: #85858e;
+    font-size: 22px;
+  }
+  &__cover-edit {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(19, 19, 19, 0.62);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    padding: 4px 0;
+  }
+  &__fields {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+    min-width: 0;
+  }
+  &__input {
+    width: 100%;
+    border: 1px solid #ececec;
+    border-radius: 10px;
+    background: #fff;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #131313;
+    outline: none;
+    transition: border-color 0.15s;
+
+    &:focus {
+      border-color: #131313;
+    }
+    &::placeholder {
+      color: #b7b7bd;
+      font-weight: 500;
+    }
+  }
+  &__file {
+    display: none;
+  }
+}
+
+.sl-hidden {
+  margin-top: 14px;
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  &__chip {
+    border: 1px solid #e3e3e3;
+    background: #fafaf8;
+    color: #6b6b73;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+
+    &:hover {
+      border-color: #131313;
+      color: #131313;
+      background: #fff;
+    }
+  }
+  &__plus {
+    color: #ab1115;
+    font-weight: 700;
+    margin-left: 2px;
+  }
+}
+
+.sl-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sl-open {
+  font-size: 14px;
+  font-weight: 600;
+  color: #85858e;
+  text-decoration: none;
+
+  &:hover {
+    color: #131313;
   }
 }
 </style>
