@@ -1,10 +1,21 @@
 <template>
   <div class="menu__back"></div>
-  <div class="menu__block">
+  <div class="menu__block" :class="{ 'is-collapsed': collapsed }">
+    <!-- Кнопка сворачивания меню до иконок -->
+    <button
+      class="menu__collapse_btn"
+      type="button"
+      :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+      @click="toggleCollapsed"
+    >
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
     <div class="menu__scroll">
-      <div class="menu__personal">
+      <div class="menu__personal" :title="collapsed ? `${userData.name} · ${userData.email}` : undefined">
         <div class="menu__personal_logo">
-          <img 
+          <img
             v-if="userData.avatar"
             :src="getAvatarUrl(userData.avatar)"
             @error="handleAvatarError"
@@ -21,71 +32,74 @@
 
       <!-- Кнопка Баланс -->
       <div class="menu__balance">
-        <div 
-          class="menu__balance_button" 
-          :title="'Счёт обновляется после скачивания отчёта. Пожалуйста, скачайте отчёт, после этого сумма на балансе обновится'"
+        <div
+          class="menu__balance_button"
+          :title="collapsed ? `Баланс: ${formattedBalance(userData.balance)} ${userData.currencySymbol}` : 'Счёт обновляется после скачивания отчёта. Пожалуйста, скачайте отчёт, после этого сумма на балансе обновится'"
         >
           <PaySVG />
           <span>Баланс: {{ formattedBalance(userData.balance) }} {{ userData.currencySymbol }}</span>
         </div>
       </div>
 
-      <LabelArtistsMenuBlock />
+      <!-- обёртка: компонент многокорневой, v-show напрямую на него не применяется -->
+      <div v-show="!collapsed">
+        <LabelArtistsMenuBlock />
+      </div>
 
       <!-- Основная навигация -->
       <ul class="menu__list">
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'personal' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'personal' })" :title="collapsed ? 'Главная' : undefined">
             <span><HomeSVG /></span>
             <span>Главная</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'release' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'release' })" :title="collapsed ? 'Выложить релиз' : undefined">
             <span><UploadSVG /></span>
             <span>Выложить релиз</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'setting' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'setting' })" :title="collapsed ? 'Настройки' : undefined">
             <span><SettingSVG /></span>
             <span>Настройки</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'partner' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'partner' })" :title="collapsed ? 'Стать партнером' : undefined">
             <span><PartnerSVG /></span>
             <span>Стать партнером</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'faq' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'faq' })" :title="collapsed ? 'FAQ' : undefined">
             <span><FaqSVG /></span>
             <span>FAQ</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'articles' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'articles' })" :title="collapsed ? 'Статьи' : undefined">
             <span><ArticlesSVG /></span>
             <span>Статьи</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'support' })">
+          <RouterLink class="menu__link" :to="Tr.i18nRoute({ name: 'support' })" :title="collapsed ? 'Связь с поддержкой' : undefined">
             <span><FaqSVG /></span>
             <span>Связь с поддержкой</span>
           </RouterLink>
         </li>
         <li class="menu__item">
-          <a href="#" target="_blank" class="menu__link" @click.prevent="goToOldVersion">
+          <a href="#" target="_blank" class="menu__link" :title="collapsed ? 'Старая версия' : undefined" @click.prevent="goToOldVersion">
             <span><FaqSVG /></span>
             <span>Старая версия</span>
           </a>
         </li>
-        
+
         <!-- Кнопка Выйти из аккаунта -->
         <li class="menu__item menu__logout">
-          <button class="menu__link" @click="handleLogout">
+          <button class="menu__link" :title="collapsed ? 'Выйти из аккаунта' : undefined" @click="handleLogout">
             <span><LogoutSVG /></span>
             <span>Выйти из аккаунта</span>
           </button>
@@ -151,6 +165,28 @@ interface StoredData {
 
 // Ключ для localStorage
 const STORAGE_KEY = 'menu_user_data';
+
+// ===== Сворачивание меню до иконок =====
+const MENU_COLLAPSED_KEY = 'menu_collapsed';
+
+const collapsed = ref(localStorage.getItem(MENU_COLLAPSED_KEY) === '1');
+
+// Класс на <html> сдвигает контент страниц (см. правила html.menu-collapsed в components.scss).
+// Ставим сразу при создании компонента, чтобы контент не прыгал при навигации.
+const applyCollapsedClass = () => {
+  document.documentElement.classList.toggle('menu-collapsed', collapsed.value);
+};
+applyCollapsedClass();
+
+const toggleCollapsed = () => {
+  collapsed.value = !collapsed.value;
+  try {
+    localStorage.setItem(MENU_COLLAPSED_KEY, collapsed.value ? '1' : '0');
+  } catch (e) {
+    console.error('Ошибка сохранения состояния меню:', e);
+  }
+  applyCollapsedClass();
+};
 
 // Функция для сохранения в localStorage
 const saveToStorage = (data: StoredData) => {
@@ -431,6 +467,113 @@ onUnmounted(() => {
   @media (max-width: 1023px) {
     left: 15px;
   }
+
+  transition: width 0.25s ease, max-width 0.25s ease, left 0.25s ease;
+
+  // ===== Свёрнутое до иконок состояние =====
+  &.is-collapsed {
+    width: 84px;
+    // сохраняем левый край: центр (точка left) смещается на (319 - 84) / 2 = 117.5px влево
+    left: calc(50% - ((1920px - 160px) / 2) + 140px - 117.5px);
+
+    // фон-подложка справа от блока ужимается до ширины свёрнутого меню
+    &::after {
+      width: calc(100vw + 84px);
+
+      @media (max-width: 1919px) {
+        width: calc(100vw + 84px);
+      }
+    }
+
+    @media (max-width: 1919px) {
+      left: 20px;
+      max-width: 84px;
+    }
+
+    @media (max-width: 1023px) {
+      left: 15px;
+    }
+
+    .menu__personal {
+      padding: 0 0 16px;
+      justify-content: center;
+    }
+
+    .menu__personal_logo {
+      width: 44px;
+      height: 44px;
+
+      svg {
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    .menu__personal_info {
+      display: none;
+    }
+
+    .menu__balance {
+      padding: 0 16px 15px;
+    }
+
+    .menu__balance_button {
+      justify-content: center;
+      padding: 12px 0;
+
+      span {
+        display: none;
+      }
+    }
+
+    .menu__link {
+      justify-content: center;
+      padding: 14px 0;
+      gap: 0;
+
+      span:last-child {
+        display: none;
+      }
+    }
+
+    .menu__privacy {
+      display: none;
+    }
+  }
+}
+
+/* Кнопка сворачивания меню */
+.menu__collapse_btn {
+  display: flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 18px;
+  right: -13px;
+  z-index: 3;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.15s linear, color 0.15s linear;
+
+  &:hover {
+    border-color: var(--text);
+  }
+
+  svg {
+    width: 13px;
+    height: 13px;
+    transition: transform 0.25s ease;
+  }
+}
+
+.menu__block.is-collapsed .menu__collapse_btn svg {
+  transform: rotate(180deg);
 }
 
 .menu__scroll {
@@ -635,10 +778,20 @@ onUnmounted(() => {
     transition: opacity 0.15s linear;
   }
 
-  &.router-link-exact-active,
-  &:hover {
+  // Активный пункт — серая плашка + красная полоса справа (как было).
+  &.router-link-exact-active {
     color: var(--text);
     background-color: var(--bg-color);
+  }
+
+  // При наведении выделяем ТЕКСТ (акцентный цвет), без серой плашки (по просьбе клиента).
+  &:hover:not(.router-link-exact-active) {
+    color: var(--color);
+    background-color: transparent;
+
+    svg {
+      color: var(--color);
+    }
   }
 
   &.router-link-exact-active::after {

@@ -212,6 +212,37 @@ const bankDetails = reactive({
   },
 });
 
+// Ссылки на карточки артиста на площадках (задача #15)
+const platformLinks = reactive({
+  yandex: "",
+  vk: "",
+  spotify: "",
+  apple: "",
+  zvuk: "",
+  youtube: "",
+});
+const isPlatformLinksLoading = ref(false);
+
+const submitPlatformLinks = async () => {
+  isPlatformLinksLoading.value = true;
+  try {
+    await sendRequest("post", "/ajax_vue/ajax/profile/updatePlatformLinks.php", {
+      yandex: platformLinks.yandex.trim(),
+      vk: platformLinks.vk.trim(),
+      spotify: platformLinks.spotify.trim(),
+      apple: platformLinks.apple.trim(),
+      zvuk: platformLinks.zvuk.trim(),
+      youtube: platformLinks.youtube.trim(),
+    });
+    ElMessage.success("Ссылки на площадки сохранены");
+  } catch (error: any) {
+    const message = error?.response?.data?.message;
+    ElMessage.error(message || "Не удалось сохранить ссылки. Проверьте формат.");
+  } finally {
+    isPlatformLinksLoading.value = false;
+  }
+};
+
 // Состояние для ошибок валидации
 const errors = reactive({
   firstName: "",
@@ -984,6 +1015,18 @@ const refreshUserData = async () => {
       formData.country = region;
 
       const settings = payload.settings as Record<string, unknown> | undefined;
+
+      // Ссылки на карточки площадок
+      const pl = settings?.platformLinks as Record<string, string> | undefined;
+      if (pl) {
+        platformLinks.yandex = pl.yandex || "";
+        platformLinks.vk = pl.vk || "";
+        platformLinks.spotify = pl.spotify || "";
+        platformLinks.apple = pl.apple || "";
+        platformLinks.zvuk = pl.zvuk || "";
+        platformLinks.youtube = pl.youtube || "";
+      }
+
       const requisites = settings?.requisites as
         | Record<string, unknown>
         | undefined;
@@ -1861,6 +1904,55 @@ watch(
                 </div>
               </div>
             </div>
+            <!-- Ссылки на карточки на площадках (задача #15) -->
+            <div class="setting__details">
+              <h5 class="setting__details_heading">
+                Ссылки на карточки на площадках
+              </h5>
+              <p class="setting__details_description">
+                Укажите ссылки на ваши карточки артиста. Все поля необязательны.
+              </p>
+              <div class="setting__details_flex">
+                <div class="form__groups">
+                  <div class="form__group">
+                    <label for="plYandex" class="form__label button">Яндекс Музыка</label>
+                    <el-input id="plYandex" v-model="platformLinks.yandex" placeholder="https://music.yandex.ru/artist/…" size="large" />
+                  </div>
+                  <div class="form__group">
+                    <label for="plVk" class="form__label button">VK Музыка</label>
+                    <el-input id="plVk" v-model="platformLinks.vk" placeholder="https://vk.com/artist/…" size="large" />
+                  </div>
+                  <div class="form__group">
+                    <label for="plSpotify" class="form__label button">Spotify</label>
+                    <el-input id="plSpotify" v-model="platformLinks.spotify" placeholder="https://open.spotify.com/artist/…" size="large" />
+                  </div>
+                  <div class="form__group">
+                    <label for="plApple" class="form__label button">Apple Music</label>
+                    <el-input id="plApple" v-model="platformLinks.apple" placeholder="https://music.apple.com/artist/…" size="large" />
+                  </div>
+                  <div class="form__group">
+                    <label for="plZvuk" class="form__label button">Звук</label>
+                    <el-input id="plZvuk" v-model="platformLinks.zvuk" placeholder="https://zvuk.com/artist/…" size="large" />
+                  </div>
+                  <div class="form__group">
+                    <label for="plYoutube" class="form__label button">YouTube</label>
+                    <el-input id="plYoutube" v-model="platformLinks.youtube" placeholder="https://youtube.com/channel/…" size="large" />
+                  </div>
+                </div>
+              </div>
+              <div class="setting__details_buttons">
+                <button
+                  class="setting__details_button button__primary"
+                  type="button"
+                  @click="submitPlatformLinks"
+                  :disabled="isPlatformLinksLoading"
+                >
+                  <span v-if="!isPlatformLinksLoading">сохранить изменения</span>
+                  <span v-else>Сохранение...</span>
+                </button>
+              </div>
+            </div>
+
             <div class="setting__password">
               <h5 class="setting__password_heading">Смена пароля</h5>
               <p class="setting__password_desc">
