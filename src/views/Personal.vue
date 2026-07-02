@@ -127,6 +127,24 @@
           <div class="personal__releases">
             <div class="personal__releases_block">
               <h5 class="personal__releases_title">ВАШИ РЕЛИЗЫ</h5>
+
+              <!-- Незавершённый черновик визарда (задача #7) -->
+              <div v-if="wizardDraft" class="personal__draft_row">
+                <div class="personal__draft_info">
+                  <span class="personal__draft_icon">🕐</span>
+                  <div>
+                    <p class="personal__draft_title">Незавершённый черновик релиза</p>
+                    <p class="personal__draft_meta">Шаг {{ wizardDraft.currentStep }} из 8 · сохранён {{ formatDraftAge(wizardDraft.updatedAt) }}</p>
+                  </div>
+                </div>
+                <RouterLink
+                  class="personal__draft_continue button__red button"
+                  :to="Tr.i18nRoute({ name: 'release', query: { draft: 'continue' } })"
+                >
+                  <span>Продолжить</span>
+                </RouterLink>
+              </div>
+
               <ul class="personal__releases_list">
                 <li 
                   class="personal__releases_item" 
@@ -1299,6 +1317,12 @@ interface Track {
   fromTrackProperty?: boolean;
 }
 
+import {
+  loadServerDraft,
+  formatDraftAge,
+  type QuizServerDraft,
+} from "@/utils/quizServerDraft";
+
 interface Release {
   id: string | number;
   name: string;
@@ -1591,6 +1615,9 @@ const isDownloading = ref(false);
 const reportDownloadProgress = ref(0);
 const isReportDownloadDelayMessageVisible = ref(false);
 const loadingYear = ref<string | null>(null); // Состояние загрузки для кнопки года
+
+// Незавершённый черновик визарда — строка-напоминание над списком релизов
+const wizardDraft = ref<QuizServerDraft | null>(null);
 
 const releasesPagination = ref({
   currentPage: 1,
@@ -3637,6 +3664,11 @@ const openSupportPage = () => {
 };
 
 onMounted(() => {
+  // черновик визарда для строки-напоминания
+  void loadServerDraft().then((d) => {
+    wizardDraft.value = d;
+  });
+
   unregisterPersonalShellRefresh = registerLabelArtistsExternalRefresh(
     refreshPersonalAfterShellEvent
   );
@@ -5941,5 +5973,46 @@ onUnmounted(() => {
   .release-status--ask_support {
     color: #ab1115;
   }
+}
+
+/* Строка незавершённого черновика над списком релизов (задача #7) */
+.personal__draft_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0 4px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--color);
+  background-color: var(--bg-gray);
+  flex-wrap: wrap;
+}
+
+.personal__draft_info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.personal__draft_icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.personal__draft_title {
+  font-weight: 600;
+}
+
+.personal__draft_meta {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-top: 2px;
+}
+
+.personal__draft_continue {
+  flex-shrink: 0;
+  padding: 10px 26px;
 }
 </style>

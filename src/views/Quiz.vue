@@ -330,9 +330,14 @@ onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
   // Черновик показываем только на превью (не при возврате с оплаты)
   if (!parsePaymentQueryParam(route.query.payment)) {
+    const continueRequested = route.query.draft === 'continue';
     void loadServerDraft().then((draft) => {
       if (!showForm.value) {
         serverDraft.value = draft;
+        // Переход со строки-напоминания на главной: сразу восстанавливаем, минуя превью
+        if (continueRequested && draft) {
+          void restoreDraftAndStart();
+        }
       }
     });
   }
