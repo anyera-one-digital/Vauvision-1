@@ -1,11 +1,38 @@
 <script lang="ts" setup>
-import { ref, onMounted } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import Header from "@/components/layout/Header.vue";
 import Menu from "@/components/layout/Menu.vue";
 import { RouterLink } from "vue-router";
 import Tr from "@/i18n/translation";
 import FaqSVG from "@/uikit/menu/FaqSVG.vue";
 import LinkSVG from "@/uikit/icon/LinkSVG.vue";
+import { sendRequest } from "@/utils/api";
+import { ElMessage } from "element-plus";
+
+// Форма обратной связи (задача #4)
+const feedback = reactive({ type: "problem", message: "" });
+const isFeedbackSending = ref(false);
+
+const submitFeedback = async () => {
+  if (feedback.message.trim().length < 5) {
+    ElMessage.warning("Напишите сообщение (минимум 5 символов)");
+    return;
+  }
+  isFeedbackSending.value = true;
+  try {
+    await sendRequest("post", "/ajax_vue/ajax/profile/feedback.php", {
+      type: feedback.type,
+      message: feedback.message.trim(),
+    });
+    ElMessage.success("Спасибо! Ваше сообщение отправлено — мы ответим на почту.");
+    feedback.message = "";
+  } catch (error: any) {
+    const message = error?.response?.data?.message;
+    ElMessage.error(message || "Не удалось отправить. Напишите нам в Telegram: @vauvision_bot");
+  } finally {
+    isFeedbackSending.value = false;
+  }
+};
 
 const loading = ref<boolean>(false);
 const loadingSvg = `
@@ -158,6 +185,47 @@ onMounted(() => {
                   <p class="support__faq_card_desc">Инструкция по скачиванию квартальных отчётов</p>
                 </div>
               </RouterLink>
+            </div>
+          </div>
+
+          <!-- Форма обратной связи (задача #4) -->
+          <div class="support__feedback">
+            <h2 class="support__links_title">Форма обратной связи</h2>
+            <p class="support__feedback_desc">
+              Расскажите о проблеме или предложите идею — сообщение попадёт напрямую команде VAUVISION.
+            </p>
+            <div class="support__feedback_form">
+              <div class="support__feedback_types">
+                <label class="support__feedback_type" :class="{ 'is-active': feedback.type === 'problem' }">
+                  <input type="radio" value="problem" v-model="feedback.type" />
+                  <span>Проблема</span>
+                </label>
+                <label class="support__feedback_type" :class="{ 'is-active': feedback.type === 'suggestion' }">
+                  <input type="radio" value="suggestion" v-model="feedback.type" />
+                  <span>Предложение</span>
+                </label>
+                <label class="support__feedback_type" :class="{ 'is-active': feedback.type === 'other' }">
+                  <input type="radio" value="other" v-model="feedback.type" />
+                  <span>Другое</span>
+                </label>
+              </div>
+              <el-input
+                v-model="feedback.message"
+                type="textarea"
+                :rows="5"
+                maxlength="5000"
+                show-word-limit
+                placeholder="Опишите проблему или предложение…"
+              />
+              <button
+                class="support__feedback_submit button__primary button"
+                type="button"
+                :disabled="isFeedbackSending"
+                @click="submitFeedback"
+              >
+                <span v-if="!isFeedbackSending">Отправить</span>
+                <span v-else>Отправка…</span>
+              </button>
             </div>
           </div>
 
@@ -599,6 +667,69 @@ onMounted(() => {
     @media (max-width: 480px) {
       font-size: 12px;
     }
+  }
+}
+
+/* Форма обратной связи (задача #4) */
+.support__feedback {
+  margin-top: 40px;
+  padding: 30px;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+
+  @media (max-width: 767px) {
+    padding: 20px 15px;
+  }
+}
+
+.support__feedback_desc {
+  padding: 10px 0 20px;
+  color: var(--text-secondary);
+}
+
+.support__feedback_form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.support__feedback_types {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.support__feedback_type {
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: border-color 0.15s linear, color 0.15s linear;
+
+  input {
+    display: none;
+  }
+
+  &:hover {
+    border-color: var(--text);
+  }
+
+  &.is-active {
+    border-color: var(--color);
+    color: var(--color);
+    font-weight: 600;
+  }
+}
+
+.support__feedback_submit {
+  align-self: flex-start;
+  padding: 12px 40px;
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 }
 </style>
