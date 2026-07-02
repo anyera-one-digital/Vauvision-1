@@ -192,10 +192,12 @@
                           <svg
                             width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
                             role="button"
-                            aria-label="Скопировать ссылку"
-                            @click.stop.prevent="copyToClipboard(release.link, 'Ссылка')"
+                            tabindex="0"
+                            aria-label="Удалить ссылку"
+                            @click.stop.prevent="confirmDeleteSmartlink(release)"
+                            @keydown.enter.stop.prevent="confirmDeleteSmartlink(release)"
                           >
-                            <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z" fill="currentColor"/>
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/>
                           </svg>
                           <!-- Карандаш: настройка смартлинка (только под фича-гейтом) -->
                           <svg
@@ -3195,6 +3197,36 @@ const createSmartlinkForRelease = async (
     }
   } finally {
     creatingSmartlinkIds.value.delete(release.id);
+  }
+};
+
+/**
+ * Полное удаление ссылки релиза (смартлинк/пресейв) с подтверждением —
+ * чтобы можно было создать заново, например при ошибочно введённом UPC.
+ */
+const confirmDeleteSmartlink = async (release: Release): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      'Вы собираетесь удалить ссылку, её придётся создавать заново. Продолжить?',
+      'Удаление ссылки',
+      {
+        confirmButtonText: 'Да',
+        cancelButtonText: 'Нет',
+        type: 'warning',
+        lockScroll: false,
+      }
+    );
+  } catch {
+    return; // «Нет» или закрыл окно
+  }
+  try {
+    await sendRequest('post', '/ajax_vue/ajax/profile/deleteSmartlink.php', {
+      RELEASE_ID: release.id,
+    });
+    release.link = '';
+    ElMessage.success('Ссылка удалена — можно создать заново');
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || 'Не удалось удалить ссылку');
   }
 };
 
