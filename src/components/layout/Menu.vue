@@ -635,10 +635,20 @@ onUnmounted(() => {
     transition: opacity 0.15s linear;
   }
 
-  &.router-link-exact-active,
-  &:hover {
+  // Активный пункт — серая плашка + красная полоса справа (как было).
+  &.router-link-exact-active {
     color: var(--text);
     background-color: var(--bg-color);
+  }
+
+  // При наведении выделяем ТЕКСТ (акцентный цвет), без серой плашки (по просьбе клиента).
+  &:hover:not(.router-link-exact-active) {
+    color: var(--color);
+    background-color: transparent;
+
+    svg {
+      color: var(--color);
+    }
   }
 
   &.router-link-exact-active::after {

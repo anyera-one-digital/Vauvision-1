@@ -146,18 +146,42 @@
                     <div class="personal__releases_flex">
                       <div class="personal__releases_top">
                         <h5 class="personal__releases_head"><span>{{ releaseTypeLabel(release) }}</span> {{ release.name }}</h5>
+                        <button
+                          type="button"
+                          class="personal__releases_collapse"
+                          :class="{ 'is-collapsed': !isReleaseExpanded(release.id) }"
+                          :aria-expanded="isReleaseExpanded(release.id)"
+                          :title="isReleaseExpanded(release.id) ? 'Свернуть' : 'Развернуть'"
+                          @click="toggleReleaseCollapse(release.id)"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </button>
                         <p class="personal__releases_album text_small"></p>
                       </div>
-                      <p class="personal__releases_date text_small">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
+                      <p class="personal__releases_date text_small" v-show="isReleaseExpanded(release.id)">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
                     </div>
                   </div>
                   <div class="personal__releases_info">
                     <div class="personal__releases_top">
                       <h5 class="personal__releases_head"><span>{{ releaseTypeLabel(release) }}</span> {{ release.name }}</h5>
+                      <button
+                        type="button"
+                        class="personal__releases_collapse"
+                        :class="{ 'is-collapsed': !isReleaseExpanded(release.id) }"
+                        :aria-expanded="isReleaseExpanded(release.id)"
+                        :title="isReleaseExpanded(release.id) ? 'Свернуть' : 'Развернуть'"
+                        @click="toggleReleaseCollapse(release.id)"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
                       <p class="personal__releases_album text_small"></p>
                     </div>
                     <!-- Блок с кодами и ссылкой -->
-                    <div class="personal__releases_codes">
+                    <div class="personal__releases_codes" v-show="isReleaseExpanded(release.id)">
                         <!-- UPC код -->
                         <div 
                           v-if="release.upcCode && release.upcCode !== 'Нет данных'" 
@@ -282,7 +306,7 @@
                     </div>
 
                     <!-- Блок с треками релиза -->
-                    <div class="personal__releases_tracks" v-if="release.tracks && release.tracks.length > 0">
+                    <div class="personal__releases_tracks" v-if="release.tracks && release.tracks.length > 0" v-show="isReleaseExpanded(release.id)">
                       <h6 class="personal__tracks_title">Треки:</h6>
                       <ul class="personal__tracks_list">
                         <li 
@@ -322,7 +346,7 @@
                       </ul>
                     </div>
                     
-                    <div class="personal__releases_bottom">
+                    <div class="personal__releases_bottom" v-show="isReleaseExpanded(release.id)">
                       <p class="personal__releases_date text_small">Дата релиза: {{ release.propertyDateRelizValue ? release.propertyDateRelizValue.split('-').reverse().join('.') : release.date.split(' ')[0]  }}</p>
                       <div class="personal__releases_agreements">
                         <a 
@@ -344,7 +368,7 @@
                       </div>
                     </div>
                   </div>
-                  <div class="personal__releases_services">
+                  <div class="personal__releases_services" v-show="isReleaseExpanded(release.id)">
                     <a
                       class="personal__releases_service_button"
                       href="https://vauvision.com/stories/"
@@ -1526,6 +1550,16 @@ const availableQuarters = ref<Quarter[]>([]);
 
 const releasesData = ref<Release[]>([]);
 const reportsData = ref<Report[]>([]);
+
+// Сворачивание карточки релиза (экономия места): храним СВЁРНУТЫЕ id,
+// по умолчанию все развёрнуты. Галочка у заголовка переключает.
+const collapsedReleases = ref<Set<string | number>>(new Set());
+const isReleaseExpanded = (id: string | number): boolean => !collapsedReleases.value.has(id);
+const toggleReleaseCollapse = (id: string | number): void => {
+  const s = new Set(collapsedReleases.value);
+  s.has(id) ? s.delete(id) : s.add(id);
+  collapsedReleases.value = s;
+};
 const lifetimeEarningsTotal = ref(0);
 const transactionsData = ref<Transaction[]>([]);
 const articlesData = ref<Article[]>([]);
@@ -3893,6 +3927,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 20px;
   line-height: 1.15;
+  font-weight: 400;
   color: var(--text-gray);
   white-space: nowrap;
 }
@@ -4213,7 +4248,7 @@ onUnmounted(() => {
   &_top {
     display: flex;
     padding: 0 0 16px;
-    flex-direction: column;
+    align-items: center;
     gap: 10px;
   }
 
@@ -4222,6 +4257,33 @@ onUnmounted(() => {
 
     span {
       font-weight: 400;
+    }
+  }
+
+  &_collapse {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-gray);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
+
+    svg {
+      transition: transform 0.2s;
+    }
+    &.is-collapsed svg {
+      transform: rotate(-90deg);
+    }
+    &:hover {
+      background: rgba(0, 0, 0, 0.05);
+      color: var(--text);
     }
   }
 
